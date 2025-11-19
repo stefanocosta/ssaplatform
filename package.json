@@ -1,7 +1,12 @@
 {
-  "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-scripts": "^5.0.1"
+  "name": "ssa-web-platform",
+  "version": "1.0.0",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "scripts": {
+    "start:client": "cd client && npm start",
+    "start:server": "cd server && python run.py",
+    "start": "concurrently \"npm run start:client\" \"npm run start:server\""
   }
 }

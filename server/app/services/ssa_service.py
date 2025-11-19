@@ -3,8 +3,7 @@ import pywt
 # Add other necessary imports from your original script's SSA logic
 
 def ssa_decomposition(series, L):
-    # ... (Your existing ssa_decomposition code) ...
-    # Ensure it returns the components array
+
     series = series.flatten()
     N = len(series)
     K = N - L + 1
@@ -39,28 +38,80 @@ def ssa_decomposition(series, L):
 
 
 def calculate_adaptive_L(series):
-    # ... (Your existing calculate_adaptive_L code) ...
+    """
+    Calculate adaptive window length L for SSA based on the TRUE strongest dominant cycle.
+    
+    Parameters:
+        series (array-like): Input time series (e.g., daily stock prices)
+    
+    Returns:
+        int: Adaptive window length L for optimal SSA decomposition based on strongest cycle
+    """
+    # Convert to numpy array and flatten
     series = np.array(series).flatten()
     N = len(series)
-    if N < 10: return max(2, N // 2)
+    
+    # Handle edge cases
+    if N < 10:
+        return max(2, N // 2)  # fallback for very short series
+    
+    # Use exactly the same parameters as in the display_wavelet_analysis function
     min_scale = 2
-    max_scale = min(128, N // 3)
+    max_scale = min(128, N//3)
     num_scales = 64
+    
+    # Generate logarithmically spaced scales
     scales = np.logspace(np.log10(min_scale), np.log10(max_scale), num=num_scales)
+    
+    # Use Morlet wavelet
     wavelet = 'cmor1.5-1.0'
+    
     try:
+        # Compute wavelet transform
         coeffs, freqs = pywt.cwt(series, scales, wavelet)
+        
+        # Calculate power spectrum
         power = np.abs(coeffs) ** 2
-        periods = 1 / (freqs + 1e-10) # Add epsilon to avoid division by zero
+        
+        # Convert frequencies to periods
+        periods = 1/freqs
+        
+        # Calculate global wavelet spectrum (average power across time)
         global_ws = np.mean(power, axis=1)
-        # Find the strongest period (index with max power)
-        strongest_idx = np.argmax(global_ws)
-        strongest_period = periods[strongest_idx]
-        # Use the period directly for L calculation, rounding it
+        
+        # Find significant periods using the same threshold as in popup (75th percentile)
+        significance_level = np.percentile(global_ws, 75)
+        significant_periods = []
+        
+        for i, p in enumerate(periods):
+            if global_ws[i] > significance_level:
+                significant_periods.append(p)
+        
+        if significant_periods:
+            # Sort significant periods by their values (ascending)
+            significant_periods.sort()
+            
+            # Use the first (smallest period) significant period
+            strongest_period = significant_periods[0]
+            
+            #print(f"Using true strongest period: {strongest_period:.1f}")
+        else:
+            # Fallback if no significant periods
+            strongest_idx = np.argmax(global_ws)
+            strongest_period = periods[strongest_idx]
+            print(f"No significant periods, using max power: {strongest_period:.1f}")
+        
+        # Round the strongest period to the nearest integer for L
         L = int(round(strongest_period))
-        # Constrain L
+        
+        # Constrain L between 5 and N/2
         L = min(max(L, 5), N // 2)
+        
+        #print(f"Final adaptive L = {L}")
+        
         return L
+        
     except Exception as e:
+        # Fallback to a simple method if wavelet analysis fails
         print(f"Wavelet analysis failed in calculate_adaptive_L: {e}")
-        return max(10, min(N // 4, 20))
+        return max(10, min(N // 4, 20))  # Conservative default

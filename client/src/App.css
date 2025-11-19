@@ -1,3 +1,54 @@
 .App {
+  /* Flex container setup */
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Fallback for older browsers */
+  height: 100dvh; /* Use dynamic viewport height for mobile */
+  
+  /* Original app styles */
+  background-color: #1e1e1e;
+  padding: 10px;
+  font-size: 12px;
+
+  /* --- FIX for Mobile Pinch-Zoom --- */
+  overflow: hidden;      /* Prevents "bounce" and scroll-bleed */
+  touch-action: none;   /* Disables all browser-level touch gestures */
+}
+
+.ChartWrapper {
+  flex-grow: 1; /* This div will grow to fill ALL remaining vertical space */
+  position: relative; /* Establishes positioning context for chart */
+  min-height: 0; /* CRITICAL: Allows flex item to shrink correctly */
+}
+
+/* --- THIS IS THE FIX for the blank mobile page --- */
+.RotateNotifier {
+  display: none; /* 1. It is HIDDEN by default */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #1e1e1e;
+  color: #d1d4dc;
+  
+  /* Use flex to center the content */
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   text-align: center;
+  font-size: 16px;
+  z-index: 9999;
+}
+
+/* This media query targets small devices (like phones) 
+  that are in landscape (horizontal) mode.
+*/
+@media (orientation: landscape) and (max-height: 500px) {
+  .App {
+    display: none; /* Hide the app */
+  }
+  .RotateNotifier {
+    display: flex; /* 2. It is SHOWN (as a flex container) when this query is active */
+  }
 }

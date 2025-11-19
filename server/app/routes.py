@@ -25,7 +25,7 @@ def get_chart_data():
     # --- Fetching (No Cache Version) ---
     print(f"Fetching FRESH data for {symbol} - {interval}")
     ohlc_data = twelvedata_service.get_twelvedata_ohlc(
-        symbol, interval, current_app.config['TWELVEDATA_API_KEY']
+        symbol, interval, current_app.config['TWELVEDATA_API_KEY'], 500
     )
     if ohlc_data is None:
         return jsonify({"error": f"Failed to fetch data for {symbol}"}), 500
@@ -47,7 +47,7 @@ def get_chart_data():
 
     # Determine L
     if use_adaptive_l:
-        L = ssa_service.calculate_adaptive_L(close_prices)
+        L = 39 #ssa_service.calculate_adaptive_L(close_prices)
         print(f"Using adaptive L = {L}")
     else:
         L = l_param
@@ -71,7 +71,8 @@ def get_chart_data():
     # Extract Trend, Cyclic, Noise
     trend = components[0] if components.shape[0] > 0 else np.zeros_like(close_prices)
     cyclic = components[1:min(3, L)].sum(axis=0) if components.shape[0] > 1 and L > 1 else np.zeros_like(close_prices)
-    noise = components[min(3, L):].sum(axis=0) if components.shape[0] >= min(3, L) and L > min(3, L) else np.zeros_like(close_prices)
+    #noise = components[min(3, L):].sum(axis=0) if components.shape[0] >= min(3, L) and L > min(3, L) else np.zeros_like(close_prices)
+    noise = components[min(3, L):min(6, L)].sum(axis=0) if components.shape[0] >= min(3, L) and L > min(3, L) else np.zeros_like(close_prices)
 
     # Prepare SSA data for TradingView (time, value, color format) with JSON serialization fix
     cyclic_data = []

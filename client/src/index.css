@@ -1,5 +1,17 @@
+*, *::before, *::after {
+  box-sizing: border-box; /* Makes sizing more predictable */
+}
+
+html,
+#root {
+  height: 100%; /* Ensure root and html take full height */
+}
+
 body {
+  height: 100%; /* Make body take full height */
   margin: 0;
+  padding: 0; /* Add padding: 0 */
+  overflow: hidden; /* Prevent body-level scrolling */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;

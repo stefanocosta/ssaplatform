@@ -1,122 +1,305 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TradingChart from './components/TradingChart';
-import './App.css'; // Assuming you created this basic CSS file
+import './App.css'; // Make sure this is importing App.css
 
 function App() {
   // State for the input fields
-  const [inputSymbol, setInputSymbol] = useState('BTC/USD');
+  const [inputSymbol, setInputSymbol] = useState('BTC/USD'); 
+  const [inputCustomSymbol, setInputCustomSymbol] = useState(''); 
   const [inputInterval, setInputInterval] = useState('1day');
+  // --- REMOVED: inputChartType state ---
   const [inputLValue, setInputLValue] = useState(30);
+  
+  // --- MODIFIED: Adaptive L is now permanently true ---
+  // We keep the state, but remove the UI and handler that changes it.
   const [inputUseAdaptiveL, setInputUseAdaptiveL] = useState(true);
+  
+  const [inputIsLive, setInputIsLive] = useState(false);
+  const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
+  const [inputShowHotspots, setInputShowHotspots] = useState(true); 
+  const [lookupCount, setLookupCount] = useState(0);
 
-  // State for the chart props (updated only on button click)
-  const [chartSymbol, setChartSymbol] = useState('BTC/USD');
-  const [chartInterval, setChartInterval] = useState('1day');
-  const [chartLValue, setChartLValue] = useState(30);
-  const [chartUseAdaptiveL, setChartUseAdaptiveL] = useState(true);
+  // This is the one prop that needs to be "committed"
+  const [finalSymbol, setFinalSymbol] = useState('BTC/USD');
+
+  const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
+
+  const assetCategories = {
+    'Crypto': ['BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD'],
+    'Forex': ['EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY'],
+    'Stocks': ['AAPL', 'AMZN', 'GOOG', 'NVDA', 'META']
+  };
+
+  // This effect triggers a refresh when the interval or L-settings change
+  useEffect(() => {
+    setLookupCount(c => c + 1);
+  }, [inputInterval, inputLValue, inputUseAdaptiveL]); 
+
+  // This effect updates the symbol when the *dropdown* changes
+  useEffect(() => {
+    if (inputSymbol !== 'CUSTOM') {
+      setFinalSymbol(inputSymbol.toUpperCase());
+      setLookupCount(c => c + 1);
+    }
+  }, [inputSymbol]);
+
 
   // --- Handlers for Input Changes ---
   const handleSymbolChange = (event) => {
-    setInputSymbol(event.target.value.toUpperCase());
+    setInputSymbol(event.target.value);
+  };
+
+  const handleCustomSymbolChange = (event) => {
+    setInputCustomSymbol(event.target.value);
   };
 
   const handleIntervalChange = (event) => {
     setInputInterval(event.target.value);
   };
+  
+  // --- REMOVED: handleChartTypeChange ---
 
-  const handleLChange = (event) => {
-    if (!inputUseAdaptiveL) {
-       const val = parseInt(event.target.value);
-       if (!isNaN(val) && val >= 2) {
-          setInputLValue(val);
-       } else if (event.target.value === '') {
-          setInputLValue('');
-       }
+  // --- MODIFIED: Removed handleLChange, handleLBlur, and handleAdaptiveLToggle ---
+
+  const handleLiveToggle = (event) => {
+    setInputIsLive(event.target.checked);
+  };
+
+  const handleAutoUpdateToggle = (event) => {
+    setInputAutoUpdate(event.target.checked);
+  };
+
+  const handleShowHotspotsToggle = (event) => {
+    setInputShowHotspots(event.target.checked);
+  };
+
+  // This is now only for the "Enter" key on the custom input
+  const handleLookup = () => {
+    const symbolToLookup = (inputSymbol === 'CUSTOM' ? inputCustomSymbol : inputSymbol).toUpperCase();
+
+    if (!symbolToLookup) {
+        console.error("No symbol provided");
+        return; 
+    }
+    
+    setFinalSymbol(symbolToLookup);
+    setLookupCount(c => c + 1); // Trigger the remount
+  };
+
+  // This function is needed for the "Enter" key
+  const handleSymbolKeyPress = (event) => {
+    if (event.key === 'Enter') {
+      handleLookup(); // Trigger lookup on Enter key
     }
   };
 
-   const handleLBlur = (event) => {
-     if (event.target.value === '') {
-        setInputLValue(30);
-     }
-  };
-
-  const handleAdaptiveLToggle = (event) => {
-    setInputUseAdaptiveL(event.target.checked);
-  };
-
-  // --- Handler for Lookup Button ---
-  const handleLookup = () => {
-    // Update the chart props with the current input values
-    setChartSymbol(inputSymbol);
-    setChartInterval(inputInterval);
-    // Ensure L is a number before setting
-    setChartLValue(Number.isInteger(inputLValue) ? inputLValue : 30);
-    setChartUseAdaptiveL(inputUseAdaptiveL);
-  };
-
-  // Handle Enter key in symbol input
-   const handleSymbolKeyPress = (event) => {
-     if (event.key === 'Enter') {
-       handleLookup();
-     }
-   };
-
-
   return (
-    <div className="App" style={{ backgroundColor: '#1e1e1e', minHeight: '100vh', padding: '20px' }}>
-      {/* Fixed title color */}
-      <h1 style={{ color: '#d1d4dc' }}>SSA Trading Platform (React Prototype)</h1>
+    <>
+      <div className="App">
+          <h1 style={{ 
+             color: '#d1d4dc', 
+             flexShrink: 0,
+             fontSize: '1.2rem',  // <-- Added: Makes text smaller
+               margin: '10px 0'   // <-- Added: Reduces top/bottom margin
+           }}>
+           SSA Trading Platform
+          </h1>
 
-      {/* --- Controls Section --- */}
-      <div style={{ marginBottom: '20px', color: '#d1d4dc', background: '#2d2d2d', padding: '15px', borderRadius: '5px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-        <span>
-          <label style={{ marginRight: '5px' }}>Symbol:</label>
-          <input type="text" value={inputSymbol}
-                 onChange={handleSymbolChange}
-                 onKeyPress={handleSymbolKeyPress}
-                 style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}/>
-        </span>
-        <span>
-          <label style={{ marginRight: '5px' }}>Interval:</label>
-          <select value={inputInterval} onChange={handleIntervalChange}
-                  style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}>
-            <option value="1week">Weekly</option>
-            <option value="1day">Daily</option>
-            <option value="4h">4H</option>
-            <option value="1h">1H</option>
-            <option value="15min">15min</option>
-          </select>
-        </span>
-        <span>
-          <label style={{ marginRight: '5px' }}>L:</label>
-          <input type="number" value={inputLValue} min="2" step="1"
-                 onChange={handleLChange}
-                 onBlur={handleLBlur}
-                 disabled={inputUseAdaptiveL}
-                 style={{ width: '50px', padding: '5px', backgroundColor: inputUseAdaptiveL ? '#555' : '#3c3c3c', color: 'white', border: '1px solid #555' }}/>
-        </span>
-        <span>
-          <input type="checkbox" id="adaptiveL" checked={inputUseAdaptiveL} onChange={handleAdaptiveLToggle}
-                 style={{ marginRight: '5px', verticalAlign: 'middle' }}/>
-          <label htmlFor="adaptiveL" style={{ verticalAlign: 'middle' }}>Adaptive L</label>
-        </span>
-        {/* Added Lookup Button */}
-        <button onClick={handleLookup} style={{ padding: '6px 15px', cursor: 'pointer', backgroundColor: '#0078d4', color: 'white', border: 'none', borderRadius: '4px' }}>
-           Lookup
-        </button>
+        {/* --- Controls Section --- */}
+        <div style={{ 
+          marginBottom: '10px', 
+          color: '#d1d4dc', 
+          background: '#2d2d2d', 
+          padding: '15px', 
+          borderRadius: '5px', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '15px', 
+          flexWrap: 'wrap',
+          flexShrink: 0 
+        }}>
+          
+          {/* --- Symbol Dropdown --- */}
+          <span>
+            <label style={{ marginRight: '5px' }}>Symbol:</label>
+            <select 
+              value={inputSymbol}
+              onChange={handleSymbolChange}
+              style={{ 
+                  padding: '5px', 
+                  backgroundColor: '#3c3c3c', 
+                  color: 'white', 
+                  border: '1px solid #555'
+              }}
+            >
+              {Object.keys(assetCategories).map(category => (
+                <optgroup key={category} label={category}>
+                  {assetCategories[category].map(asset => (
+                    <option key={asset} value={asset}>
+                      {asset}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value="CUSTOM">Custom...</option>
+            </select>
+
+            {inputSymbol === 'CUSTOM' && (
+              <input 
+                type="text"
+                value={inputCustomSymbol}
+                onChange={handleCustomSymbolChange}
+                onKeyPress={handleSymbolKeyPress} 
+                onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())}
+                placeholder="Type & Press Enter"
+                autoFocus
+                style={{ 
+                    padding: '5px', 
+                    backgroundColor: '#3c3c3c', 
+                    color: 'white', 
+                    border: '1px solid #555',
+                    width: '120px', 
+                    marginLeft: '10px' 
+                }}
+              />
+            )}
+          </span>
+
+          {/* --- Other Controls --- */}
+          <span>
+            <label style={{ marginRight: '5px' }}>Interval:</label>
+            <select 
+              value={inputInterval} 
+              onChange={handleIntervalChange}
+              style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}
+            >
+              <option value="1min">1min</option>
+              <option value="5min">5min</option>
+              <option value="15min">15min</option>
+              <option value="30min">30min</option>
+              <option value="1h">1H</option>
+              <option value="4h">4H</option>
+              <option value="1day">Daily</option>
+              <option value="1week">Weekly</option>
+              <option value="1month">Monthly</option>
+            </select>
+          </span>
+          
+          {/* --- REMOVED: Chart Type Dropdown --- */}
+
+          {/* --- MODIFIED: L-Value and Adaptive L Controls are Commented Out --- */}
+          {/*
+          <span>
+            <label style={{ marginRight: '5px' }}>L:</label>
+            <input 
+              type="number" 
+              value={inputLValue} 
+              min="2" 
+              step="1"
+              onChange={handleLChange}
+              onBlur={handleLBlur}
+              disabled={inputUseAdaptiveL}
+              style={{ width: '45px', padding: '5px', backgroundColor: inputUseAdaptiveL ? '#555' : '#3c3c3c', color: 'white', border: '1px solid #555' }}
+            />
+          </span>
+          <span>
+            <input 
+              type="checkbox" 
+              id="adaptiveL" 
+              checked={inputUseAdaptiveL} 
+              onChange={handleAdaptiveLToggle}
+              style={{ marginRight: '5px', verticalAlign: 'middle' }}
+            />
+            <label htmlFor="adaptiveL" style={{ verticalAlign: 'middle' }}>Adaptive L</label>
+          </span>
+          */}
+          {/* --- END MODIFICATION --- */}
+          
+          <span>
+            <input 
+              type="checkbox" 
+              id="showHotspots" 
+              checked={inputShowHotspots} 
+              onChange={handleShowHotspotsToggle}
+              style={{ marginRight: '5px', verticalAlign: 'middle' }}
+            />
+            <label 
+              htmlFor="showHotspots" 
+              style={{ 
+                verticalAlign: 'middle',
+                color: inputShowHotspots ? '#ffeb3b' : '#d1d4dc', 
+                fontWeight: inputShowHotspots ? 'bold' : 'normal'
+              }}
+            >
+              HotSpots
+            </label>
+          </span>
+
+          <span>
+            <input 
+              type="checkbox" 
+              id="autoUpdateMode" 
+              checked={inputAutoUpdate} 
+              onChange={handleAutoUpdateToggle}
+              style={{ marginRight: '5px', verticalAlign: 'middle' }}
+            />
+            <label 
+              htmlFor="autoUpdateMode" 
+              style={{ 
+                verticalAlign: 'middle',
+                color: inputAutoUpdate ? '#00bcd4' : '#d1d4dc',
+                fontWeight: inputAutoUpdate ? 'bold' : 'normal'
+              }}
+            >
+              Auto(1m)
+            </label>
+          </span>
+          <span>
+            <input 
+              type="checkbox" 
+              id="liveMode" 
+              checked={inputIsLive} 
+              onChange={handleLiveToggle}
+              style={{ marginRight: '5px', verticalAlign: 'middle' }}
+            />
+            <label 
+              htmlFor="liveMode" 
+              style={{ 
+                verticalAlign: 'middle',
+                color: inputIsLive ? '#00ff00' : '#d1d4dc',
+                fontWeight: inputIsLive ? 'bold' : 'normal'
+              }}
+            >
+              Live
+            </label>
+          </span>
+
+        </div>
+
+        {/* --- Chart Component Wrapper --- */}
+        <div className="ChartWrapper">
+          <TradingChart
+            key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
+            
+            symbol={finalSymbol}
+            interval={inputInterval}
+            // --- REMOVED: chartType prop ---
+            lValue={inputLValue}
+            useAdaptiveL={inputUseAdaptiveL} // This will now always be 'true'
+            apiKey={TWELVE_DATA_API_KEY}
+            enableRealtime={inputIsLive}
+            autoUpdate={inputAutoUpdate}
+            showHotspots={inputShowHotspots} 
+          />
+        </div>
       </div>
 
-      {/* --- Chart Component --- */}
-      {/* Pass the chart state variables & Added key */}
-      <TradingChart
-         key={`${chartSymbol}-${chartInterval}-${chartLValue}-${chartUseAdaptiveL}`}
-         symbol={chartSymbol}
-         interval={chartInterval}
-         lValue={chartLValue}
-         useAdaptiveL={chartUseAdaptiveL}
-      />
-    </div>
+      {/* --- Rotate Notifier (no changes) --- */}
+      <div className="RotateNotifier">
+        <p>Please rotate your device to portrait mode</p>
+        <p>This app is not designed for landscape view.</p>
+      </div>
+    </>
   );
 }
 

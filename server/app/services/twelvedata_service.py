@@ -11,10 +11,10 @@ def get_twelvedata_ohlc(symbol, interval, api_key, output_size=300):
     print(f"Fetching {interval} data for {td_symbol} (outputsize={output_size})...")
 
     # Adjust outputsize for specific intervals if needed (e.g., more for weekly)
-    if interval == '1week':
-         output_size = max(output_size, 500) # Get more weekly data if possible
-    elif interval in ['15min', '1h', '4h']:
-         output_size = max(output_size, 1000) # Get more intraday data
+   # if interval == '1week':
+   #      output_size = max(output_size, 300) # Get more weekly data if possible
+   # elif interval in ['15min', '1h', '4h']:
+   # output_size = max(output_size, 300) # Get more intraday data
 
     url = f"https://api.twelvedata.com/time_series?symbol={td_symbol}&interval={interval}&outputsize={output_size}&apikey={api_key}"
 

@@ -2,7 +2,8 @@ import axios from 'axios'; // Using axios for making HTTP requests
 
 // Define the base URL for your Flask API.
 // This assumes your Flask server is running on port 5000.
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+//const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.1.119:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 console.log("API Base URL defined as:", API_BASE_URL); // Verification Log
 
 /**

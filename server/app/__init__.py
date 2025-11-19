@@ -6,7 +6,7 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    CORS(app) # Enable Cross-Origin Resource Sharing for React dev server
+    CORS(app, origins=["*"]) # Enable Cross-Origin Resource Sharing for React dev server
 
     # Import and register blueprints/routes here
     from . import routes
