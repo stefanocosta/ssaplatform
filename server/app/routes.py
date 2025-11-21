@@ -25,7 +25,7 @@ def get_chart_data():
     # --- Fetching (No Cache Version) ---
     print(f"Fetching FRESH data for {symbol} - {interval}")
     ohlc_data = twelvedata_service.get_twelvedata_ohlc(
-        symbol, interval, current_app.config['TWELVEDATA_API_KEY'], 500
+        symbol, interval, current_app.config['TWELVE_DATA_API_KEY'], 500
     )
     if ohlc_data is None:
         return jsonify({"error": f"Failed to fetch data for {symbol}"}), 500
