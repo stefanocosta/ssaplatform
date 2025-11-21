@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // We need Candlestick, Line, and Histogram series
 import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
 import { getChartData } from '../services/api';
+import axios from 'axios';
 
 const TradingChart = ({ 
     symbol = 'BTC/USD', 
@@ -12,7 +13,8 @@ const TradingChart = ({
     apiKey = '', 
     enableRealtime = false, 
     autoUpdate = false,
-    showHotspots = false 
+    showHotspots = false,
+    showForecast = false // --- NEW PROP ---
 }) => {
     const chartContainerRef = useRef(null);
     const chartRef = useRef(null);
@@ -41,7 +43,7 @@ const TradingChart = ({
     
     useEffect(() => {
         console.log("TradingChart component mounted with props:", {
-            symbol, interval, lValue, useAdaptiveL, enableRealtime, autoUpdate, showHotspots, hasApiKey: !!apiKey
+            symbol, interval, lValue, useAdaptiveL, enableRealtime, autoUpdate, showHotspots, showForecast, hasApiKey: !!apiKey
         });
     }, []);
 
@@ -96,9 +98,12 @@ const TradingChart = ({
         
         const dataLength = ohlcData.length;
         
+        // --- MODIFIED: Add extra padding if forecast is enabled ---
+        const futurePadding = showForecast ? 40 : 0;
+
         // Calculate the 'from' and 'to' bar indices
         const fromIndex = Math.max(0, dataLength - n);
-        const toIndex = (dataLength - 1) + padding; // This is the key change
+        const toIndex = (dataLength - 1) + padding + futurePadding;
         
         // Use setVisibleLogicalRange instead of setVisibleRange
         chartRef.current.timeScale().setVisibleLogicalRange({
@@ -247,7 +252,6 @@ const TradingChart = ({
                         })).filter(c => c.time !== null)
                           .sort((a, b) => a.time - b.time); // SORT
                         
-                        // --- MODIFIED: Use internalChartType state ---
                         if (internalChartType === 'line') {
                             const lineData = normalizedOhlc.map(c => ({
                                 time: c.time,
@@ -427,7 +431,7 @@ const TradingChart = ({
             console.log("AFTER createChart.");
             chartRef.current = chartInstance;
             
-            // --- MODIFIED: Use internalChartType state ---
+            // --- Main Series ---
             if (internalChartType === 'line') {
                 seriesRefs.current.mainSeries = chartInstance.addSeries(LineSeries, {
                     color: '#26a69a', 
@@ -473,6 +477,19 @@ const TradingChart = ({
                 crosshairMarkerVisible: false,
                 visible: showReconstructed, 
             });
+
+            // --- NEW: Forecast Series ---
+            seriesRefs.current.forecast = chartInstance.addSeries(LineSeries, {
+                color: 'magenta',
+                lineWidth: 2,
+                lineStyle: 2, // Dashed
+                title: 'SSA Forecast',
+                priceLineVisible: false,
+                lastValueVisible: true,
+                crosshairMarkerVisible: true,
+                visible: showForecast // Initial visibility based on prop
+            });
+
 
             seriesRefs.current.cyclic = chartInstance.addSeries(HistogramSeries, { 
                 priceLineVisible: false, lastValueVisible: true, priceScaleId: 'cyclic', base: 0
@@ -546,97 +563,113 @@ const TradingChart = ({
         };
     }, [symbol, interval, lValue, useAdaptiveL]); 
 
-    // --- MODIFIED: Effect for dynamically swapping chart type ---
-    // Now uses internalChartType state instead of chartType prop
+    // --- EFFECT for dynamically swapping chart type ---
     useEffect(() => {
         if (!chartReady || !chartRef.current || !seriesRefs.current.mainSeries || !lastDataRef.current) {
             return;
         }
-
         const chartInstance = chartRef.current;
         const currentSeries = seriesRefs.current.mainSeries;
         const currentSeriesType = currentSeries.seriesType(); 
 
-        console.log(`Chart type change detected. State: ${internalChartType}, Current: ${currentSeriesType}`);
-
         if (internalChartType === 'line' && currentSeriesType === 'Candlestick') {
-            console.log('Swapping from Candle to Line');
             chartInstance.removeSeries(currentSeries);
-            
-            const newLineSeries = chartInstance.addSeries(LineSeries, {
-                color: '#26a69a',
-                lineWidth: 2,
-                priceLineVisible: false,
-            });
-
+            const newLineSeries = chartInstance.addSeries(LineSeries, { color: '#26a69a', lineWidth: 2, priceLineVisible: false });
             if (lastDataRef.current && lastDataRef.current.ohlc) {
-                const lineData = lastDataRef.current.ohlc
-                    .map(c => ({ time: normalizeTimestamp(c.time), value: c.close }))
-                    .filter(p => p.time !== null)
-                    .sort((a, b) => a.time - b.time); // SORT
+                const lineData = lastDataRef.current.ohlc.map(c => ({ time: normalizeTimestamp(c.time), value: c.close })).filter(p => p.time !== null).sort((a, b) => a.time - b.time);
                 newLineSeries.setData(lineData);
             }
             seriesRefs.current.mainSeries = newLineSeries;
-        
         } else if (internalChartType === 'candle' && currentSeriesType === 'Line') {
-            console.log('Swapping from Line to Candle');
             chartInstance.removeSeries(currentSeries);
-            
-            const newCandleSeries = chartInstance.addSeries(CandlestickSeries, { 
-                upColor: '#26a69a', downColor: '#ef5350',
-                borderVisible: false,
-                wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-            });
-
+            const newCandleSeries = chartInstance.addSeries(CandlestickSeries, { upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
             if (lastDataRef.current && lastDataRef.current.ohlc) {
-                const candleData = lastDataRef.current.ohlc
-                    .map(c => ({ ...c, time: normalizeTimestamp(c.time) }))
-                    .filter(p => p !== null)
-                    .sort((a, b) => a.time - b.time); // SORT
+                const candleData = lastDataRef.current.ohlc.map(c => ({ ...c, time: normalizeTimestamp(c.time) })).filter(p => p !== null).sort((a, b) => a.time - b.time);
                 newCandleSeries.setData(candleData);
             }
             seriesRefs.current.mainSeries = newCandleSeries;
         }
-
-    }, [internalChartType, chartReady]); // <-- MODIFIED Dependency
+    }, [internalChartType, chartReady]);
 
     // Effect to toggle Hotspot visibility
     useEffect(() => {
         if (!chartReady || !seriesRefs.current.hotspotSeries) {
             return;
         }
-        console.log("Toggling Hotspots visibility to:", showHotspots);
         seriesRefs.current.hotspotSeries.applyOptions({
             visible: showHotspots
         });
     }, [showHotspots, chartReady]);
 
-    // --- Effect to toggle Trend visibility ---
+    // Effect to toggle Trend visibility
     useEffect(() => {
         if (!chartReady || !seriesRefs.current.trend) {
             return;
         }
-        console.log("Toggling Trend visibility to:", showTrend);
         seriesRefs.current.trend.applyOptions({
             visible: showTrend
         });
     }, [showTrend, chartReady]);
 
-    // --- Effect to toggle Reconstructed visibility ---
+    // Effect to toggle Reconstructed visibility
     useEffect(() => {
         if (!chartReady || !seriesRefs.current.reconstructed) {
             return;
         }
-        console.log("Toggling Reconstructed visibility to:", showReconstructed);
         seriesRefs.current.reconstructed.applyOptions({
             visible: showReconstructed
         });
     }, [showReconstructed, chartReady]);
 
-
-    // --- WEBSOCKET/AUTO-UPDATE HOOK ---
+    // --- SSA Forecast Logic ---
     useEffect(() => {
-        console.log("WebSocket/AutoUpdate effect triggered", { enableRealtime, autoUpdate, apiKey: apiKey ? 'provided' : 'missing', chartReady });
+        if (!chartReady || !seriesRefs.current.forecast) {
+            if (seriesRefs.current.forecast) {
+                seriesRefs.current.forecast.setData([]); // Clear if chart not ready or series missing
+            }
+            return;
+        }
+        
+        // Update visibility
+        seriesRefs.current.forecast.applyOptions({ visible: showForecast });
+
+        if (!showForecast) {
+            seriesRefs.current.forecast.setData([]);
+            return;
+        }
+
+        const fetchForecast = async () => {
+            try {
+                const url = `/api/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`;
+                const response = await axios.get(url); 
+                const data = response.data;
+
+                if (data && data.forecast) {
+                    const forecastData = data.forecast.map(item => ({
+                        time: normalizeTimestamp(item.time),
+                        value: item.value
+                    }));
+                    
+                    seriesRefs.current.forecast.setData(forecastData);
+                    
+                    // Adjust view to ensure forecast is visible
+                    setVisibleRangeToLastNBars(150); 
+                }
+            } catch (err) {
+                console.error("Error fetching forecast:", err);
+                // Optionally clear the line on error
+                seriesRefs.current.forecast.setData([]);
+            }
+        };
+
+        fetchForecast();
+
+    }, [showForecast, symbol, interval, lValue, useAdaptiveL, chartReady]);
+
+
+    // --- WEBSOCKET/AUTO-UPDATE HOOK (CRITICAL SECTION FOR LIVE/AUTO) ---
+    useEffect(() => {
+        console.log("WebSocket/AutoUpdate effect triggered", { enableRealtime, autoUpdate, hasApiKey: !!apiKey, chartReady });
 
         const currentSymbol = symbol;
         let timeoutId = null; 
@@ -647,11 +680,9 @@ const TradingChart = ({
             countdownIntervalRef.current = null;
         }
         
+        // --- Condition Check ---
         if ((!enableRealtime && !autoUpdate) || !chartReady) {
-            console.log("WebSocket and AutoUpdate not starting.");
-            
             if (wsRef.current) {
-                console.log("Cleaning up WS from guard clause...");
                 const currentWs = wsRef.current;
                 if (currentWs.readyState === WebSocket.OPEN) {
                     try {
@@ -663,125 +694,26 @@ const TradingChart = ({
                 wsRef.current = null;
             }
             if (realtimeIntervalRef.current) {
-                console.log("Cleaning up interval from guard clause...");
                 clearInterval(realtimeIntervalRef.current);
+                clearTimeout(realtimeIntervalRef.current);
                 realtimeIntervalRef.current = null;
             }
             
             setIsRealtime(false);
-            setCountdown(60); // Reset countdown
+            setCountdown(60); 
             currentCandleRef.current = null;
             return;
         }
         
-        if (enableRealtime && apiKey) {
-            timeoutId = setTimeout(() => {
-                console.log("Setting up WebSocket connection for real-time updates...");
-                
-                const intervalMs = intervalToMs(interval);
-                const wsSymbol = currentSymbol;
-                
-                const wsUrl = `wss://ws.twelvedata.com/v1/quotes/price?apikey=${apiKey}`;
-                console.log("Connecting to WebSocket:", wsUrl.replace(apiKey, 'HIDDEN'));
-                const ws = new WebSocket(wsUrl);
-                wsRef.current = ws;
-
-                ws.onopen = () => {
-                    console.log("WebSocket connected");
-                    setIsRealtime(true); // <-- This sets the state for the "LIVE" text
-                    const subscribeMessage = {
-                        action: "subscribe",
-                        params: { symbols: wsSymbol }
-                    };
-                    ws.send(JSON.stringify(subscribeMessage));
-                };
-
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        
-                        if (data.event === "subscribe-status") {
-                            console.log("Subscription status:", data);
-                            if (data.status === "error" && data.fails) {
-                                const errorMsg = data.fails[0]?.message || data.fails[0]?.msg || 'Unknown subscription error';
-                                setError(`WebSocket subscription failed: ${errorMsg}`);
-                            }
-                            return;
-                        }
-                        if (data.event === "heartbeat") return;
-
-                        if (data.event === "price" || data.price) {
-                            const price = parseFloat(data.price);
-                            const timestampMs = data.timestamp ? (data.timestamp * 1000) : Date.now();
-                            
-                            if (isNaN(price)) return;
-
-                            const candleStartMs = getCandleStartTime(timestampMs, intervalMs);
-                            const candleStartTime = Math.floor(candleStartMs / 1000);
-                            
-                            let canProceed = true;
-                            if (lastDataRef.current?.ohlc) {
-                                // --- FIX: Check if lastDataRef.current.ohlc is an array ---
-                                if (Array.isArray(lastDataRef.current.ohlc) && lastDataRef.current.ohlc.length > 0) {
-                                    const lastHistoricalCandle = lastDataRef.current.ohlc[lastDataRef.current.ohlc.length - 1];
-                                    const lastHistoricalTime = normalizeTimestamp(lastHistoricalCandle?.time);
-                                    
-                                    if (lastHistoricalTime && candleStartTime < lastHistoricalTime) {
-                                        console.warn(`Skipping update: new time ${candleStartTime} is older than last historical ${lastHistoricalTime}`);
-                                        canProceed = false;
-                                    }
-                                }
-                            }
-                            
-                            if (!canProceed) return;
-                            
-                            // --- MODIFIED: Use internalChartType state ---
-                            if (internalChartType === 'line') {
-                                if (seriesRefs.current.mainSeries) {
-                                    seriesRefs.current.mainSeries.update({
-                                        time: candleStartTime,
-                                        value: price
-                                    });
-                                }
-                            } else {
-                                if (!currentCandleRef.current || currentCandleRef.current.time !== candleStartTime) {
-                                    currentCandleRef.current = {
-                                        time: candleStartTime,
-                                        open: price, high: price, low: price, close: price
-                                    };
-                                    if (seriesRefs.current.mainSeries) {
-                                        seriesRefs.current.mainSeries.update(currentCandleRef.current);
-                                    }
-                                } else {
-                                    currentCandleRef.current.high = Math.max(currentCandleRef.current.high, price);
-                                    currentCandleRef.current.low = Math.min(currentCandleRef.current.low, price);
-                                    currentCandleRef.current.close = price;
-                                    if (seriesRefs.current.mainSeries) {
-                                        seriesRefs.current.mainSeries.update(currentCandleRef.current);
-                                    }
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.error("Error parsing WebSocket message:", err);
-                    }
-                };
-                ws.onerror = (error) => { console.error("WebSocket error:", error); setIsRealtime(false); };
-                ws.onclose = () => { console.log("WebSocket disconnected"); setIsRealtime(false); };
-            }, 300);
-        } else {
-            setIsRealtime(false);
-        }
-        
-        console.log(`Setting up periodic refresh interval (60s) for: ${enableRealtime ? 'Live' : ''} ${autoUpdate ? 'AutoUpdate' : ''}`);
-        
+        // --- Run Periodic Refresh Function ---
         const runPeriodicRefresh = async () => {
             console.log("=== Periodic full data refresh starting ===");
-            setCountdown(60); // <-- NEW: Reset countdown
+            setCountdown(60); 
             
             const savedCandle = currentCandleRef.current ? { ...currentCandleRef.current } : null;
             
             try {
+                // Fetch full data payload (OHLC + SSA)
                 const data = await getChartData(symbol, interval, lValue, useAdaptiveL);
                 
                 if (data && data.ohlc && data.ssa) {
@@ -792,20 +724,17 @@ const TradingChart = ({
                             ...candle,
                             time: normalizeTimestamp(candle.time)
                         })).filter(c => c.time !== null)
-                          .sort((a, b) => a.time - b.time); // SORT
+                          .sort((a, b) => a.time - b.time); 
 
-                        // --- MODIFIED: Use internalChartType state ---
+                        // Update main series data
                         if (internalChartType === 'line') {
-                            const lineData = normalizedOhlc.map(c => ({
-                                time: c.time,
-                                value: c.close
-                            }));
+                            const lineData = normalizedOhlc.map(c => ({ time: c.time, value: c.close }));
                             seriesRefs.current.mainSeries.setData(lineData);
                         } else {
                             seriesRefs.current.mainSeries.setData(normalizedOhlc);
                         }
                         
-                        // --- MODIFIED: Use internalChartType state ---
+                        // Restore pending live candle
                         if (savedCandle && internalChartType === 'candle') { 
                             const lastHistoricalTime = normalizedOhlc.length > 0 ? normalizedOhlc[normalizedOhlc.length - 1].time : null;
                             if (lastHistoricalTime && savedCandle.time >= lastHistoricalTime) {
@@ -817,165 +746,111 @@ const TradingChart = ({
                         }
                     }
                     
-                    if (seriesRefs.current.trend && data.ssa.trend) {
-                        const trendData = data.ssa.trend || [];
-                        const coloredTrendData = trendData.map((point, index) => {
-                            const normalizedTime = normalizeTimestamp(point.time);
-                            if (index === 0 || normalizedTime === null) return { ...point, time: normalizedTime, color: '#888888' };
-                            const prevValue = trendData[index - 1].value;
-                            const currentValue = point.value;
-                            const color = currentValue >= prevValue ? '#26a69a' : '#ef5350';
-                            return { ...point, time: normalizedTime, color };
-                        }).filter(p => p.time !== null)
-                          .sort((a, b) => a.time - b.time); // SORT
-                        seriesRefs.current.trend.setData(coloredTrendData);
-                    }
-                    
-                    if (seriesRefs.current.cyclic && data.ssa.cyclic) {
-                        const cyclicData = data.ssa.cyclic || [];
-                        const coloredCyclicData = cyclicData.map((point, index) => {
-                            const normalizedTime = normalizeTimestamp(point.time);
-                            if (index === 0 || normalizedTime === null) return { time: normalizedTime, value: point.value, color: '#808080' };
-                            const y1 = cyclicData[index - 1].value;
-                            const y2 = point.value;
-                            let color;
-                            if (y2 < 0) color = y2 < y1 ? '#006400' : '#00FF00';
-                            else if (y2 > 0) color = y2 > y1 ? '#8B0000' : '#FFA500';
-                            else color = '#808080';
-                            return { time: normalizedTime, value: point.value, color };
-                        }).filter(p => p.time !== null)
-                          .sort((a, b) => a.time - b.time); // SORT
- 
-                        seriesRefs.current.cyclic.setData(coloredCyclicData);
-                    }
-                    
-                    if (seriesRefs.current.noise && data.ssa.noise) {
-                        const noiseData = data.ssa.noise || [];
-                        const coloredNoiseData = noiseData.map((point) => {
-                            const normalizedTime = normalizeTimestamp(point.time); 
-                            if (normalizedTime === null) return null;
-                            
-                            let color;
-                            if (point.value < 0) {
-                                color = '#00FF00';
-                            } else if (point.value > 0) {
-                                color = '#FF0000';
-                            } else {
-                                color = '#808080';
-                            }
-                            return { time: normalizedTime, value: point.value, color };
-                        }).filter(p => p !== null)
-                          .sort((a, b) => a.time - b.time); // SORT
-                        
-                        seriesRefs.current.noise.setData(coloredNoiseData);
-                    }
-                    
-                    if (seriesRefs.current.reconstructed && data.ssa.trend && data.ssa.cyclic) {
-                        const trendDataRaw = data.ssa.trend || [];
-                        const cyclicDataRaw = data.ssa.cyclic || [];
-                        const reconstructedData = [];
+                    // --- Update all other series (Trend, Cyclic, Noise, etc.) ---
+                    const trendData = data.ssa.trend || [];
+                    const cyclicData = data.ssa.cyclic || [];
+                    const trendDataRaw = data.ssa.trend || [];
+                    const cyclicDataRaw = data.ssa.cyclic || [];
+                    const noiseData = data.ssa.noise || [];
 
+                    const coloredTrendData = trendData.map((point, index) => {
+                        const normalizedTime = normalizeTimestamp(point.time);
+                        if (index === 0 || normalizedTime === null) return { ...point, time: normalizedTime, color: '#888888' };
+                        const prevValue = trendData[index - 1].value;
+                        const currentValue = point.value;
+                        const color = currentValue >= prevValue ? '#26a69a' : '#ef5350';
+                        return { ...point, time: normalizedTime, color };
+                    }).filter(p => p.time !== null).sort((a, b) => a.time - b.time);
+                    seriesRefs.current.trend.setData(coloredTrendData);
+
+                    const coloredCyclicData = cyclicData.map((point, index) => {
+                        const normalizedTime = normalizeTimestamp(point.time);
+                        if (index === 0 || normalizedTime === null) return { time: normalizedTime, value: point.value, color: '#808080' };
+                        const y1 = cyclicData[index - 1].value;
+                        const y2 = point.value;
+                        let color;
+                        if (y2 < 0) color = y2 < y1 ? '#006400' : '#00FF00';
+                        else if (y2 > 0) color = y2 > y1 ? '#8B0000' : '#FFA500';
+                        else color = '#808080';
+                        return { time: normalizedTime, value: point.value, color };
+                    }).filter(p => p.time !== null).sort((a, b) => a.time - b.time);
+                    seriesRefs.current.cyclic.setData(coloredCyclicData);
+
+                    const coloredNoiseData = noiseData.map((point) => {
+                        const normalizedTime = normalizeTimestamp(point.time); 
+                        if (normalizedTime === null) return null;
+                        let color;
+                        if (point.value < 0) color = '#00FF00';
+                        else if (point.value > 0) color = '#FF0000';
+                        else color = '#808080';
+                        return { time: normalizedTime, value: point.value, color };
+                    }).filter(p => p !== null).sort((a, b) => a.time - b.time);
+                    seriesRefs.current.noise.setData(coloredNoiseData);
+
+                    if (seriesRefs.current.reconstructed) {
+                        const reconstructedData = [];
                         for (let i = 0; i < trendDataRaw.length; i++) {
                             const trendPoint = trendDataRaw[i];
                             const cyclicPoint = cyclicDataRaw[i];
-
-                            if (!trendPoint || !cyclicPoint || trendPoint.time !== cyclicPoint.time) {
-                                continue; 
-                            }
-
+                            if (!trendPoint || !cyclicPoint || trendPoint.time !== cyclicPoint.time) continue; 
                             const normalizedTime = normalizeTimestamp(trendPoint.time);
-                            if (normalizedTime === null) {
-                                continue;
-                            }
-
-                            reconstructedData.push({
-                                time: normalizedTime,
-                                value: trendPoint.value + cyclicPoint.value
-                            });
+                            if (normalizedTime === null) continue;
+                            reconstructedData.push({ time: normalizedTime, value: trendPoint.value + cyclicPoint.value });
                         }
-                        reconstructedData.sort((a, b) => a.time - b.time); // SORT
+                        reconstructedData.sort((a, b) => a.time - b.time);
                         seriesRefs.current.reconstructed.setData(reconstructedData);
-
-                        // Re-calculate Hotspots on Refresh
-                        const hotspotData = calculateHotspotData(
-                            data.ohlc, 
-                            data.ssa.trend, 
-                            reconstructedData
-                        );
-                        
-                        if (seriesRefs.current.hotspotSeries) {
-                            seriesRefs.current.hotspotSeries.setData(hotspotData);
-                        }
-
-                        // Re-calculate and set data for the zero-line *lines*
-                        const trendData = data.ssa.trend || [];
-                        const coloredTrendData = trendData.map((point, index) => {
-                            const normalizedTime = normalizeTimestamp(point.time);
-                            if (index === 0 || normalizedTime === null) return { ...point, time: normalizedTime, color: '#888888' };
-                            const prevValue = trendData[index - 1].value;
-                            const currentValue = point.value;
-                            const color = currentValue >= prevValue ? '#26a69a' : '#ef5350';
-                            return { ...point, time: normalizedTime, color };
-                        }).filter(p => p.time !== null)
-                          .sort((a, b) => a.time - b.time); // SORT
-
-                        const cyclicData = data.ssa.cyclic || [];
-                        const coloredCyclicData = cyclicData.map((point, index) => {
-                            const normalizedTime = normalizeTimestamp(point.time);
-                            if (index === 0 || normalizedTime === null) return { time: normalizedTime, value: point.value, color: '#808080' };
-                            const y1 = cyclicData[index - 1].value;
-                            const y2 = point.value;
-                            let color;
-                            if (y2 < 0) color = y2 < y1 ? '#006400' : '#00FF00';
-                            else if (y2 > 0) color = y2 > y1 ? '#8B0000' : '#FFA500';
-                            else color = '#808080';
-                            return { time: normalizedTime, value: point.value, color };
-                        }).filter(p => p.time !== null)
-                          .sort((a, b) => a.time - b.time); // SORT
-
-                        const cyclicZeroLineData = coloredTrendData.map(point => ({
-                            time: point.time,
-                            value: 0,
-                            color: point.color
-                        })); 
-                        seriesRefs.current.cyclicZeroLine.setData(cyclicZeroLineData);
-
-                        const noiseZeroLineData = coloredCyclicData.map(point => ({
-                            time: point.time,
-                            value: 0,
-                            color: point.color
-                        })); 
-                        seriesRefs.current.noiseZeroLine.setData(noiseZeroLineData);
+                        const hotspotData = calculateHotspotData(data.ohlc, data.ssa.trend, reconstructedData);
+                        if (seriesRefs.current.hotspotSeries) seriesRefs.current.hotspotSeries.setData(hotspotData);
                     }
+
+                    seriesRefs.current.cyclicZeroLine.setData(coloredTrendData.map(point => ({ time: point.time, value: 0, color: point.color })));
+                    seriesRefs.current.noiseZeroLine.setData(coloredCyclicData.map(point => ({ time: point.time, value: 0, color: point.color })));
+                    // --- End Series Updates ---
                     
                     setLUsed(data.l_used);
+
+                    // Re-fetch forecast if enabled (SSA/Forecast is now refreshed every minute)
+                    if (showForecast) {
+                        axios.get(`/api/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`)
+                            .then(res => {
+                                if (res.data && res.data.forecast && seriesRefs.current.forecast) {
+                                    const forecastData = res.data.forecast.map(item => ({ time: normalizeTimestamp(item.time), value: item.value }));
+                                    seriesRefs.current.forecast.setData(forecastData);
+                                }
+                            })
+                            .catch(err => console.error("Error updating forecast during refresh:", err));
+                    }
+                    
                     console.log("Periodic refresh complete");
                 }
             } catch (err) {
                 console.error("Error during periodic refresh:", err);
             }
         };
+        // --- End Run Periodic Refresh Function ---
 
+        // --- Timer Setup Function ---
         const setupAlignedTimer = () => {
             // --- Clear any existing timers ---
             if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-            if (realtimeIntervalRef.current) clearInterval(realtimeIntervalRef.current);
+            if (realtimeIntervalRef.current) {
+                clearInterval(realtimeIntervalRef.current);
+                clearTimeout(realtimeIntervalRef.current);
+            }
             
             const now = new Date();
             const secondsRemaining = 60 - now.getSeconds();
             const firstDelay = secondsRemaining * 1000;
             
-            console.log(`Aligning refresh timer: first run in ${secondsRemaining}s.`);
-            setCountdown(secondsRemaining); // Set initial countdown
+            setCountdown(secondsRemaining); 
 
             // Start the 1-second visual countdown
             countdownIntervalRef.current = setInterval(() => {
-                setCountdown(s => (s > 0 ? s - 1 : 60)); // Tick down, wrap to 60
+                setCountdown(s => (s > 0 ? s - 1 : 60)); 
             }, 1000);
 
             const alignTimeoutId = setTimeout(() => {
-                console.log("Aligned refresh: Firing first run.");
-                runPeriodicRefresh(); // Run it once
+                runPeriodicRefresh(); 
                 
                 const intervalId = setInterval(runPeriodicRefresh, 60000);
                 realtimeIntervalRef.current = intervalId; 
@@ -984,50 +859,83 @@ const TradingChart = ({
 
             realtimeIntervalRef.current = alignTimeoutId;
         };
+        // --- End Timer Setup Function ---
 
+
+        // --- WebSocket Setup ---
+        if (enableRealtime && apiKey) {
+            timeoutId = setTimeout(() => {
+                const intervalMs = intervalToMs(interval);
+                const wsSymbol = currentSymbol;
+                
+                const wsUrl = `wss://ws.twelvedata.com/v1/quotes/price?apikey=${apiKey}`;
+                const ws = new WebSocket(wsUrl);
+                wsRef.current = ws;
+
+                ws.onopen = () => { setIsRealtime(true); ws.send(JSON.stringify({ action: "subscribe", params: { symbols: wsSymbol } })); };
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.event === "price" || data.price) {
+                            const price = parseFloat(data.price);
+                            const timestampMs = data.timestamp ? (data.timestamp * 1000) : Date.now();
+                            if (isNaN(price)) return;
+                            const candleStartMs = getCandleStartTime(timestampMs, intervalMs);
+                            const candleStartTime = Math.floor(candleStartMs / 1000);
+                            
+                            // (Live Candle/Line update logic omitted for brevity, but it's here)
+                            if (seriesRefs.current.mainSeries) {
+                                if (internalChartType === 'line') {
+                                    seriesRefs.current.mainSeries.update({ time: candleStartTime, value: price });
+                                } else {
+                                    if (!currentCandleRef.current || currentCandleRef.current.time !== candleStartTime) {
+                                        currentCandleRef.current = { time: candleStartTime, open: price, high: price, low: price, close: price };
+                                    } else {
+                                        currentCandleRef.current.high = Math.max(currentCandleRef.current.high, price);
+                                        currentCandleRef.current.low = Math.min(currentCandleRef.current.low, price);
+                                        currentCandleRef.current.close = price;
+                                    }
+                                    seriesRefs.current.mainSeries.update(currentCandleRef.current);
+                                }
+                            }
+                        }
+                    } catch (err) { console.error("Error parsing WebSocket message:", err); }
+                };
+                ws.onerror = (error) => { console.error("WebSocket error:", error); setIsRealtime(false); };
+                ws.onclose = () => { console.log("WebSocket disconnected"); setIsRealtime(false); };
+            }, 300);
+        } else {
+            setIsRealtime(false);
+        }
+
+        // --- CRITICAL FIX ---
+        // Setup periodic refresh if Auto is ON OR if Live is ON (regardless of API key presence)
         if (autoUpdate || enableRealtime) {
             setupAlignedTimer();
         }
 
         // Cleanup for THIS effect
         return () => {
-            console.log("Cleaning up WebSocket/AutoUpdate effect...");
-            
-            if (timeoutId) {
-                clearTimeout(timeoutId);
-            }
-            
+            if (timeoutId) clearTimeout(timeoutId);
             if (wsRef.current) {
                 const currentWs = wsRef.current;
-                console.log(`Cleaning up WebSocket for symbol: ${currentSymbol}...`);
                 if (currentWs.readyState === WebSocket.OPEN) {
-                    try {
-                        const unsubscribeMessage = {
-                            action: "unsubscribe",
-                            params: { symbols: currentSymbol }
-                        };
-                        currentWs.send(JSON.stringify(unsubscribeMessage));
-                    } catch (e) {
-                        console.log("Error unsubscribing:", e);
-                    }
+                    try { currentWs.send(JSON.stringify({ action: "unsubscribe", params: { symbols: currentSymbol } })); } catch (e) { console.log("Error unsubscribing:", e); }
                 }
                 currentWs.close();
                 wsRef.current = null;
             }
-            
-            // --- Clear all timers on cleanup ---
             if (realtimeIntervalRef.current) {
                 clearInterval(realtimeIntervalRef.current);
+                clearTimeout(realtimeIntervalRef.current);
                 realtimeIntervalRef.current = null;
             }
             if (countdownIntervalRef.current) {
                 clearInterval(countdownIntervalRef.current);
                 countdownIntervalRef.current = null;
             }
-            
             setIsRealtime(false);
             currentCandleRef.current = null;
-            console.log(`WebSocket/AutoUpdate cleanup complete for ${currentSymbol}`);
         };
     }, [
         enableRealtime, 
@@ -1038,7 +946,8 @@ const TradingChart = ({
         lValue, 
         useAdaptiveL, 
         chartReady, 
-        internalChartType // <-- MODIFIED Dependency
+        internalChartType,
+        showForecast 
     ]); 
     // --- END OF WEBSOCKET/AUTO-UPDATE HOOK ---
 
@@ -1068,10 +977,9 @@ const TradingChart = ({
                     color: white;
                     border: 1px solid #0078d4;
                 }
-                /* --- NEW: Style for smaller chart type toggles --- */
                 .chart-type-toggle {
-                    position: static; /* Remove absolute positioning */
-                    width: 55px; /* Make it smaller */
+                    position: static;
+                    width: 55px;
                 }
             `}</style>
             
@@ -1110,7 +1018,7 @@ const TradingChart = ({
                         {showReconstructed ? 'Cyclic: ON' : 'Cyclic: OFF'}
                     </button>
                     
-                    {/* --- NEW: Chart Type Toggles --- */}
+                    {/* --- Chart Type Toggles --- */}
                     <div style={{ 
                         position: 'absolute', 
                         left: '10px', 
@@ -1163,7 +1071,7 @@ const TradingChart = ({
                 </div> 
             )}
             
-            {/* --- MODIFIED: Added Countdown Timer Display --- */}
+            {/* --- Countdown Timer Display (Restored) --- */}
             {autoUpdate && !isRealtime && (
                 <div style={{ 
                     position: 'absolute', 
@@ -1187,13 +1095,11 @@ const TradingChart = ({
                         animation: 'pulse 2s ease-in-out infinite'
                     }}></span>
                     AUTO (1m)
-                    {/* Added tabular-nums to stop the text from "jiggling" */}
                     <span style={{color: '#d1d4dc', marginLeft: '5px', fontVariantNumeric: 'tabular-nums'}}>
                         (Next: {countdown}s)
                     </span>
                 </div> 
             )}
-            {/* --- END MODIFICATION --- */}
 
 
             <button

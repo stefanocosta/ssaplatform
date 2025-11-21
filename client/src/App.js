@@ -13,6 +13,7 @@ function App() {
   const [inputIsLive, setInputIsLive] = useState(false);
   const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
   const [inputShowHotspots, setInputShowHotspots] = useState(true); 
+  const [inputShowForecast, setInputShowForecast] = useState(false); // SSA Forecast State
   const [lookupCount, setLookupCount] = useState(0);
   const [finalSymbol, setFinalSymbol] = useState('BTC/USD');
 
@@ -57,6 +58,10 @@ function App() {
 
   const handleShowHotspotsToggle = (event) => {
     setInputShowHotspots(event.target.checked);
+  };
+
+  const handleShowForecastToggle = (event) => {
+    setInputShowForecast(event.target.checked);
   };
 
   const handleLookup = () => {
@@ -184,6 +189,27 @@ function App() {
             </label>
           </span>
 
+          {/* SSA Forecast Checkbox */}
+          <span>
+            <input 
+              type="checkbox" 
+              id="showForecast" 
+              checked={inputShowForecast} 
+              onChange={handleShowForecastToggle}
+              style={{ marginRight: '5px', verticalAlign: 'middle' }}
+            />
+            <label 
+              htmlFor="showForecast" 
+              style={{ 
+                verticalAlign: 'middle',
+                color: inputShowForecast ? '#ff00ff' : '#d1d4dc', 
+                fontWeight: inputShowForecast ? 'bold' : 'normal'
+              }}
+            >
+              Forecast
+            </label>
+          </span>
+          
           <span>
             <input 
               type="checkbox" 
@@ -236,6 +262,7 @@ function App() {
             enableRealtime={inputIsLive}
             autoUpdate={inputAutoUpdate}
             showHotspots={inputShowHotspots} 
+            showForecast={inputShowForecast}
           />
         </div>
       </div>
