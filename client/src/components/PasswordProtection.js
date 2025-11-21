@@ -6,7 +6,7 @@ const PasswordProtection = ({ children }) => {
   const [error, setError] = useState('');
 
   // The password you want to use - change this!
-  const CORRECT_PASSWORD = 'SSA31415';
+  const CORRECT_PASSWORD = 'stefano';
 
   // Check if user was previously authenticated (stored in sessionStorage)
   useEffect(() => {

@@ -30,6 +30,8 @@ const TradingChart = ({
     const [lUsed, setLUsed] = useState(null);
     const [isRealtime, setIsRealtime] = useState(false);
     const [chartReady, setChartReady] = useState(false);
+    // --- NEW State to prevent forecast flash ---
+    const [historicalDataLoaded, setHistoricalDataLoaded] = useState(false);
     
     // --- State for line visibility ---
     const [showTrend, setShowTrend] = useState(true);
@@ -215,6 +217,9 @@ const TradingChart = ({
         }
 
         let chartInstance = null;
+        
+        // --- IMPORTANT: Clear the historicalDataLoaded flag on setup/remount ---
+        setHistoricalDataLoaded(false);
 
         const fetchData = async () => {
             if (!chartRef.current) {
@@ -378,6 +383,9 @@ const TradingChart = ({
                         
                         // Set initial view to last 150 bars
                         setVisibleRangeToLastNBars(150);
+
+                        // --- CRITICAL: Set load flag TRUE after successful data loading ---
+                        setHistoricalDataLoaded(true);
                     }
                 } else {
                      console.error("fetchData: Invalid data structure received:", data);
@@ -483,7 +491,7 @@ const TradingChart = ({
                 color: 'magenta',
                 lineWidth: 2,
                 lineStyle: 2, // Dashed
-                title: 'SSA Forecast',
+                title: '',
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: true,
@@ -559,11 +567,62 @@ const TradingChart = ({
              chartRef.current = null;
              seriesRefs.current = {};
              setChartReady(false);
+             setHistoricalDataLoaded(false); // Reset flag on unmount
              console.log("Main setup cleanup complete.");
         };
     }, [symbol, interval, lValue, useAdaptiveL]); 
 
-    // --- EFFECT for dynamically swapping chart type ---
+    // --- Forecast Effect (Gated by Historical Data Load) ---
+    useEffect(() => {
+        // --- CRITICAL GATE: Only fetch if historical data has successfully loaded ---
+        if (!chartReady || !seriesRefs.current.forecast || !historicalDataLoaded) {
+            if (seriesRefs.current.forecast) {
+                 // Clear line when historical data isn't loaded yet to prevent the flash
+                 seriesRefs.current.forecast.setData([]); 
+            }
+            return;
+        }
+        
+        // Update visibility
+        seriesRefs.current.forecast.applyOptions({ visible: showForecast });
+
+        if (!showForecast) {
+            seriesRefs.current.forecast.setData([]);
+            return;
+        }
+
+        const fetchForecast = async () => {
+            try {
+                const url = `/api/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`;
+                const response = await axios.get(url); 
+                const data = response.data;
+
+                if (data && data.forecast) {
+                    const forecastData = data.forecast.map(item => ({
+                        time: normalizeTimestamp(item.time),
+                        value: item.value
+                    }));
+                    
+                    seriesRefs.current.forecast.setData(forecastData);
+                    
+                    // Adjust view to ensure forecast is visible
+                    setVisibleRangeToLastNBars(150); 
+                }
+            } catch (err) {
+                console.error("Error fetching forecast:", err);
+                // Optionally clear the line on error
+                seriesRefs.current.forecast.setData([]);
+            }
+        };
+
+        fetchForecast();
+
+    }, [showForecast, symbol, interval, lValue, useAdaptiveL, chartReady, historicalDataLoaded]); // Gated dependency
+
+
+    // --- Other Effects (Unchanged functional logic) ---
+
+    // Effect for dynamically swapping chart type
     useEffect(() => {
         if (!chartReady || !chartRef.current || !seriesRefs.current.mainSeries || !lastDataRef.current) {
             return;
@@ -621,53 +680,8 @@ const TradingChart = ({
         });
     }, [showReconstructed, chartReady]);
 
-    // --- SSA Forecast Logic ---
-    useEffect(() => {
-        if (!chartReady || !seriesRefs.current.forecast) {
-            if (seriesRefs.current.forecast) {
-                seriesRefs.current.forecast.setData([]); // Clear if chart not ready or series missing
-            }
-            return;
-        }
-        
-        // Update visibility
-        seriesRefs.current.forecast.applyOptions({ visible: showForecast });
 
-        if (!showForecast) {
-            seriesRefs.current.forecast.setData([]);
-            return;
-        }
-
-        const fetchForecast = async () => {
-            try {
-                const url = `/api/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`;
-                const response = await axios.get(url); 
-                const data = response.data;
-
-                if (data && data.forecast) {
-                    const forecastData = data.forecast.map(item => ({
-                        time: normalizeTimestamp(item.time),
-                        value: item.value
-                    }));
-                    
-                    seriesRefs.current.forecast.setData(forecastData);
-                    
-                    // Adjust view to ensure forecast is visible
-                    setVisibleRangeToLastNBars(150); 
-                }
-            } catch (err) {
-                console.error("Error fetching forecast:", err);
-                // Optionally clear the line on error
-                seriesRefs.current.forecast.setData([]);
-            }
-        };
-
-        fetchForecast();
-
-    }, [showForecast, symbol, interval, lValue, useAdaptiveL, chartReady]);
-
-
-    // --- WEBSOCKET/AUTO-UPDATE HOOK (CRITICAL SECTION FOR LIVE/AUTO) ---
+    // --- WEBSOCKET/AUTO-UPDATE HOOK ---
     useEffect(() => {
         console.log("WebSocket/AutoUpdate effect triggered", { enableRealtime, autoUpdate, hasApiKey: !!apiKey, chartReady });
 
