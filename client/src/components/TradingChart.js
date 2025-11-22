@@ -490,7 +490,7 @@ const TradingChart = ({
             seriesRefs.current.forecast = chartInstance.addSeries(LineSeries, {
                 color: 'magenta',
                 lineWidth: 2,
-                lineStyle: 2, // Dashed
+                lineStyle: 0,
                 title: '',
                 priceLineVisible: false,
                 lastValueVisible: true,
