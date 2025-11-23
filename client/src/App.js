@@ -90,10 +90,10 @@ function App() {
         style={{ height: '100%', display: 'flex', flexDirection: 'column' }} 
       >
         <div style={{ 
-          marginBottom: '10px', 
+          marginBottom: '5px', 
           color: '#d1d4dc', 
           background: '#2d2d2d', 
-          padding: '15px', 
+          padding: '8px 15px', 
           borderRadius: '5px', 
           display: 'flex', 
           alignItems: 'center', 

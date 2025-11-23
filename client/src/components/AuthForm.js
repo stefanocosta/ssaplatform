@@ -129,7 +129,7 @@ const AuthForm = ({ children }) => {
         <div 
           style={{ 
             backgroundColor: '#2d2d2d', 
-            padding: '10px 15px', 
+            padding: '5px 15px', 
             display: 'flex', 
             justifyContent: 'space-between', // Align title left, user info right
             alignItems: 'center',
@@ -152,7 +152,7 @@ const AuthForm = ({ children }) => {
             className="flex items-center gap-2"
             style={{ 
                 background: '#444', 
-                padding: '5px 10px', 
+                padding: '3px 8px', 
                 borderRadius: '8px' 
             }}
           >
