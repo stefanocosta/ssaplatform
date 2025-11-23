@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TradingChart from './components/TradingChart';
-import PasswordProtection from './components/PasswordProtection'; // Add this import
+// Update the import to the new authentication component
+import AuthForm from './components/AuthForm'; 
 import './App.css';
 
 function App() {
@@ -81,17 +82,13 @@ function App() {
   };
 
   return (
-    <PasswordProtection>
-      <div className="App">
-          <h1 style={{ 
-             color: '#d1d4dc', 
-             flexShrink: 0,
-             fontSize: '1.2rem',
-             margin: '10px 0'
-           }}>
-           SSA Trading Platform
-          </h1>
-
+    // Wrap the entire app in the new AuthForm component
+    <AuthForm>
+      <div 
+        className="App"
+        // FIX 1: Set height to 100% and use flex column layout to manage header/controls/chart
+        style={{ height: '100%', display: 'flex', flexDirection: 'column' }} 
+      >
         <div style={{ 
           marginBottom: '10px', 
           color: '#d1d4dc', 
@@ -102,7 +99,7 @@ function App() {
           alignItems: 'center', 
           gap: '15px', 
           flexWrap: 'wrap',
-          flexShrink: 0 
+          flexShrink: 0 // Ensures the controls only take up necessary height
         }}>
           
           <span>
@@ -251,7 +248,11 @@ function App() {
           </span>
         </div>
 
-        <div className="ChartWrapper">
+        <div 
+          className="ChartWrapper"
+          // FIX 2: Set flexGrow: 1 to make the chart area fill the remaining vertical space
+          style={{ flexGrow: 1, overflow: 'hidden', height: '100%' }}
+        >
           <TradingChart
             key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
             symbol={finalSymbol}
@@ -271,7 +272,7 @@ function App() {
         <p>Please rotate your device to portrait mode</p>
         <p>This app is not designed for landscape view.</p>
       </div>
-    </PasswordProtection>
+    </AuthForm>
   );
 }
 

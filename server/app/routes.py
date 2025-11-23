@@ -2,12 +2,103 @@ from flask import Blueprint, request, jsonify, current_app
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from .services import ssa_service, twelvedata_service, forecast_service
-# --- MODIFIED: Import forecast_service ---
+# Import extensions/models that will be defined in __init__.py and models.py
+from . import db # Corrected import from previous step
+from app.models import User # Assuming User model is defined in models.py
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from sqlalchemy import select # Import select for 2.0 style queries
 
+from .services import ssa_service, twelvedata_service, forecast_service
+
+# The main blueprint for API routes (including trading and auth)
 bp = Blueprint('api', __name__, url_prefix='/api')
 
+
+# --- NEW: User Authentication Routes ---
+
+@bp.route('/register', methods=['POST'])
+def register():
+    """Endpoint for user registration."""
+    data = request.get_json()
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+
+    if not username or not email or not password:
+        return jsonify({"msg": "Missing username, email, or password"}), 400
+
+    # Check for existing user/email (using SQLAlchemy 2.0 style)
+    existing_user = db.session.execute(
+        db.select(User).filter_by(username=username)
+    ).scalar_one_or_none()
+    
+    existing_email = db.session.execute(
+        db.select(User).filter_by(email=email)
+    ).scalar_one_or_none()
+    
+    if existing_user or existing_email:
+        return jsonify({"msg": "User or email already exists"}), 409
+
+    new_user = User(username=username, email=email)
+    new_user.set_password(password) # Hash the password
+
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({"msg": "User registered successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        # Log the error for debugging
+        current_app.logger.error(f"Registration failed for user {username}: {e}")
+        return jsonify({"msg": "Registration failed due to server error."}), 500
+
+@bp.route('/login', methods=['POST'])
+def login():
+    """Endpoint for user login and JWT generation."""
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    # Query user (using SQLAlchemy 2.0 style)
+    user = db.session.execute(
+        db.select(User).filter_by(username=username)
+    ).scalar_one_or_none()
+
+    if user is None or not user.check_password(password):
+        return jsonify({"msg": "Bad username or password"}), 401
+
+    # FIX: Create a JWT token containing the user's ID as a STRING
+    access_token = create_access_token(identity=str(user.id))
+    return jsonify(access_token=access_token, username=user.username), 200
+
+# Example of a protected endpoint (you might not need this now, but it shows how to protect endpoints)
+@bp.route('/user-info', methods=['GET'])
+@jwt_required()
+def user_info():
+    """Returns basic info for the logged-in user."""
+    # FIX: get_jwt_identity returns a string, convert it back to an integer
+    user_id_str = get_jwt_identity()
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return jsonify({"msg": "Invalid user ID in token"}), 401
+    
+    # Query user (using SQLAlchemy 2.0 style)
+    user = db.session.execute(
+        db.select(User).filter_by(id=user_id)
+    ).scalar_one_or_none()
+    
+    if user:
+        return jsonify(user_id=user.id, username=user.username, email=user.email), 200
+    return jsonify({"msg": "User not found"}), 404
+
+# --- END NEW: User Authentication Routes ---
+
+
+# --- EXISTING: Trading Data Routes (Now Protected by JWT) ---
+
 @bp.route('/chart-data', methods=['GET'])
+@jwt_required() # <-- Uncomment this line to protect your trading data
 def get_chart_data():
     symbol = request.args.get('symbol', 'BTC/USD')
     interval = request.args.get('interval', '1day')
@@ -33,7 +124,7 @@ def get_chart_data():
          return jsonify({"error": "Close price data missing or invalid after fetch"}), 500
 
     close_prices = df['close'].values.flatten()
-    times = df['time'].values 
+    times = df['time'].values
 
     N = len(close_prices)
     if N < 10:
@@ -97,6 +188,7 @@ def get_chart_data():
     return jsonify(response_data)
 
 @bp.route('/forecast', methods=['GET'])
+@jwt_required() # <-- Uncomment this line to protect your forecasting data
 def get_forecast():
     symbol = request.args.get('symbol', 'BTC/USD')
     interval = request.args.get('interval', '1day')

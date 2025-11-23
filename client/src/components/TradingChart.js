@@ -593,8 +593,24 @@ const TradingChart = ({
 
         const fetchForecast = async () => {
             try {
-                const url = `/api/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`;
-                const response = await axios.get(url); 
+                // --- FIX START: Retrieve Token and Build Protected Request ---
+                const token = localStorage.getItem('access_token');
+                if (!token) {
+                    console.error("Authentication token not found for forecast.");
+                    throw new Error("Missing authentication token.");
+                }
+                
+                // NOTE: Using absolute URL to match the setup used in api.js
+                const API_BASE_URL = 'http://192.168.1.119:5000/api'; 
+                const url = `${API_BASE_URL}/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`;
+
+                const response = await axios.get(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}` // Pass the JWT
+                    }
+                });
+                // --- FIX END ---
+
                 const data = response.data;
 
                 if (data && data.forecast) {
@@ -825,14 +841,22 @@ const TradingChart = ({
 
                     // Re-fetch forecast if enabled (SSA/Forecast is now refreshed every minute)
                     if (showForecast) {
-                        axios.get(`/api/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`)
-                            .then(res => {
-                                if (res.data && res.data.forecast && seriesRefs.current.forecast) {
-                                    const forecastData = res.data.forecast.map(item => ({ time: normalizeTimestamp(item.time), value: item.value }));
-                                    seriesRefs.current.forecast.setData(forecastData);
-                                }
-                            })
-                            .catch(err => console.error("Error updating forecast during refresh:", err));
+                        // --- START RE-FETCH FIX (Same logic as fetchForecast) ---
+                        const token = localStorage.getItem('access_token');
+                        const API_BASE_URL = 'http://127.0.0.1:5000/api';
+                        const url = `${API_BASE_URL}/forecast?symbol=${symbol}&interval=${interval}&l=${lValue}&adaptive_l=${useAdaptiveL}`;
+
+                        if (token) {
+                            axios.get(url, { headers: { 'Authorization': `Bearer ${token}` } })
+                                .then(res => {
+                                    if (res.data && res.data.forecast && seriesRefs.current.forecast) {
+                                        const forecastData = res.data.forecast.map(item => ({ time: normalizeTimestamp(item.time), value: item.value }));
+                                        seriesRefs.current.forecast.setData(forecastData);
+                                    }
+                                })
+                                .catch(err => console.error("Error updating forecast during refresh:", err));
+                        }
+                        // --- END RE-FETCH FIX ---
                     }
                     
                     console.log("Periodic refresh complete");
