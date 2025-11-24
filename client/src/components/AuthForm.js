@@ -119,7 +119,7 @@ const AuthForm = ({ children }) => {
       <div 
         className="AppWrapper" 
         style={{ 
-            height: '100vh', 
+            height: '100dvh', 
             display: 'flex', 
             flexDirection: 'column', 
             backgroundColor: '#1a1a1a' // Match global background
@@ -135,7 +135,8 @@ const AuthForm = ({ children }) => {
             alignItems: 'center',
             color: '#d1d4dc',
             flexShrink: 0, 
-            boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
+            boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+            height: '50px' // ADDED FIXED HEIGHT
           }}
         >
           {/* 1. App Title */}
@@ -172,7 +173,7 @@ const AuthForm = ({ children }) => {
         
         {/* Render the rest of the application content below the header */}
         {/* This div allows the rest of the App.js content to scroll if needed */}
-        <div style={{ flexGrow: 1, overflowY: 'auto' }}>
+        <div style={{ flexGrow: 1 }}>
             {children}
         </div>
       </div>

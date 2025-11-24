@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import TradingChart from './components/TradingChart';
-// Update the import to the new authentication component
 import AuthForm from './components/AuthForm'; 
 import './App.css';
 
 function App() {
-  // State for the input fields
   const [inputSymbol, setInputSymbol] = useState('BTC/USD'); 
   const [inputCustomSymbol, setInputCustomSymbol] = useState(''); 
   const [inputInterval, setInputInterval] = useState('1day');
@@ -14,10 +12,10 @@ function App() {
   const [inputIsLive, setInputIsLive] = useState(false);
   const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
   const [inputShowHotspots, setInputShowHotspots] = useState(true); 
-  const [inputShowForecast, setInputShowForecast] = useState(false); // SSA Forecast State
+  const [inputShowForecast, setInputShowForecast] = useState(false); 
   const [lookupCount, setLookupCount] = useState(0);
   const [finalSymbol, setFinalSymbol] = useState('BTC/USD');
-
+  
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
   const assetCategories = {
@@ -82,24 +80,29 @@ function App() {
   };
 
   return (
-    // Wrap the entire app in the new AuthForm component
     <AuthForm>
       <div 
         className="App"
-        // FIX 1: Set height to 100% and use flex column layout to manage header/controls/chart
-        style={{ height: '100%', display: 'flex', flexDirection: 'column' }} 
+        style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '100%', // Fill the AuthForm container
+          width: '100%',
+          overflow: 'hidden' 
+        }} 
       >
+        {/* CONTROL BAR - Fixed Height (Auto) */}
         <div style={{ 
-          marginBottom: '5px', 
+          flex: '0 0 auto', 
           color: '#d1d4dc', 
           background: '#2d2d2d', 
-          padding: '8px 15px', 
-          borderRadius: '5px', 
+          padding: '5px 10px', 
           display: 'flex', 
           alignItems: 'center', 
-          gap: '15px', 
+          gap: '10px', 
           flexWrap: 'wrap',
-          flexShrink: 0 // Ensures the controls only take up necessary height
+          zIndex: 20,
+          borderBottom: '1px solid #444'
         }}>
           
           <span>
@@ -107,12 +110,7 @@ function App() {
             <select 
               value={inputSymbol}
               onChange={handleSymbolChange}
-              style={{ 
-                  padding: '5px', 
-                  backgroundColor: '#3c3c3c', 
-                  color: 'white', 
-                  border: '1px solid #555'
-              }}
+              style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}
             >
               {Object.keys(assetCategories).map(category => (
                 <optgroup key={category} label={category}>
@@ -134,15 +132,7 @@ function App() {
                 onKeyPress={handleSymbolKeyPress} 
                 onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())}
                 placeholder="Type & Press Enter"
-                autoFocus
-                style={{ 
-                    padding: '5px', 
-                    backgroundColor: '#3c3c3c', 
-                    color: 'white', 
-                    border: '1px solid #555',
-                    width: '120px', 
-                    marginLeft: '10px' 
-                }}
+                style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555', width: '100px', marginLeft: '5px' }}
               />
             )}
           </span>
@@ -166,111 +156,60 @@ function App() {
             </select>
           </span>
           
-          <span>
-            <input 
-              type="checkbox" 
-              id="showHotspots" 
-              checked={inputShowHotspots} 
-              onChange={handleShowHotspotsToggle}
-              style={{ marginRight: '5px', verticalAlign: 'middle' }}
-            />
-            <label 
-              htmlFor="showHotspots" 
-              style={{ 
-                verticalAlign: 'middle',
-                color: inputShowHotspots ? '#ffeb3b' : '#d1d4dc', 
-                fontWeight: inputShowHotspots ? 'bold' : 'normal'
-              }}
-            >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <label style={{ color: inputShowHotspots ? '#ffeb3b' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
+              <input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{ marginRight: '4px' }} />
               HotSpots
             </label>
-          </span>
 
-          {/* SSA Forecast Checkbox */}
-          <span>
-            <input 
-              type="checkbox" 
-              id="showForecast" 
-              checked={inputShowForecast} 
-              onChange={handleShowForecastToggle}
-              style={{ marginRight: '5px', verticalAlign: 'middle' }}
-            />
-            <label 
-              htmlFor="showForecast" 
-              style={{ 
-                verticalAlign: 'middle',
-                color: inputShowForecast ? '#ff00ff' : '#d1d4dc', 
-                fontWeight: inputShowForecast ? 'bold' : 'normal'
-              }}
-            >
+            <label style={{ color: inputShowForecast ? '#ff00ff' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
+              <input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} style={{ marginRight: '4px' }} />
               Forecast
             </label>
-          </span>
-          
-          <span>
-            <input 
-              type="checkbox" 
-              id="autoUpdateMode" 
-              checked={inputAutoUpdate} 
-              onChange={handleAutoUpdateToggle}
-              style={{ marginRight: '5px', verticalAlign: 'middle' }}
-            />
-            <label 
-              htmlFor="autoUpdateMode" 
-              style={{ 
-                verticalAlign: 'middle',
-                color: inputAutoUpdate ? '#00bcd4' : '#d1d4dc',
-                fontWeight: inputAutoUpdate ? 'bold' : 'normal'
-              }}
-            >
-              Auto(1m)
+            
+            <label style={{ color: inputAutoUpdate ? '#00bcd4' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
+              <input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{ marginRight: '4px' }} />
+              Auto
             </label>
-          </span>
-          
-          <span>
-            <input 
-              type="checkbox" 
-              id="liveMode" 
-              checked={inputIsLive} 
-              onChange={handleLiveToggle}
-              style={{ marginRight: '5px', verticalAlign: 'middle' }}
-            />
-            <label 
-              htmlFor="liveMode" 
-              style={{ 
-                verticalAlign: 'middle',
-                color: inputIsLive ? '#00ff00' : '#d1d4dc',
-                fontWeight: inputIsLive ? 'bold' : 'normal'
-              }}
-            >
+            
+            <label style={{ color: inputIsLive ? '#00ff00' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
+              <input type="checkbox" checked={inputIsLive} onChange={handleLiveToggle} style={{ marginRight: '4px' }} />
               Live
             </label>
           </span>
         </div>
 
+        {/* CHART WRAPPER - Flex Grow with Relative Positioning */}
         <div 
           className="ChartWrapper"
-          // FIX 2: Set flexGrow: 1 to make the chart area fill the remaining vertical space
-          style={{ flexGrow: 1, overflow: 'hidden', height: '100%' }}
+          style={{ 
+            flex: '1 1 auto', 
+            position: 'relative', // Key: establish stacking context
+            overflow: 'hidden',
+            width: '100%',
+            minHeight: 0 // Allow shrinking
+          }} 
         >
-          <TradingChart
-            key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
-            symbol={finalSymbol}
-            interval={inputInterval}
-            lValue={inputLValue}
-            useAdaptiveL={inputUseAdaptiveL}
-            apiKey={TWELVE_DATA_API_KEY}
-            enableRealtime={inputIsLive}
-            autoUpdate={inputAutoUpdate}
-            showHotspots={inputShowHotspots} 
-            showForecast={inputShowForecast}
-          />
+          {/* Absolute positioning forces the chart to fill the wrapper exactly */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+            <TradingChart
+              key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
+              symbol={finalSymbol}
+              interval={inputInterval}
+              lValue={inputLValue}
+              useAdaptiveL={inputUseAdaptiveL}
+              apiKey={TWELVE_DATA_API_KEY}
+              enableRealtime={inputIsLive}
+              autoUpdate={inputAutoUpdate}
+              showHotspots={inputShowHotspots} 
+              showForecast={inputShowForecast}
+            />
+          </div>
         </div>
       </div>
 
       <div className="RotateNotifier">
         <p>Please rotate your device to portrait mode</p>
-        <p>This app is not designed for landscape view.</p>
       </div>
     </AuthForm>
   );

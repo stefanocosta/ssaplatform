@@ -1,6 +1,7 @@
 # config.py
 import os
 from dotenv import load_dotenv
+from datetime import timedelta
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, '..', '.env')) # Load .env from parent dir
@@ -20,6 +21,8 @@ class Config:
     # JWT Configuration
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'super-secret-jwt-key' 
     JWT_TOKEN_LOCATION = ['headers'] # Tokens will be sent in the Authorization header
+    # Set the token to expire after 30 minutes of inactivity, for example
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 
         # Ensure JWT_SECRET_KEY is set or the app won't run securely
     if not JWT_SECRET_KEY:

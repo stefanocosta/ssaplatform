@@ -1,70 +1,79 @@
-import axios from 'axios'; // Using axios for making HTTP requests
+import axios from 'axios'; 
 
 // Define the base URL for your Flask API.
-// Note: Using a relative path '/api' is good if the React app is served from Flask
-// but if you are running them separately (e.g., React on 4000, Flask on 5000), 
-// you might need to use the absolute URL like 'http://127.0.0.1:5000/api'.
-// For this fix, let's assume you've configured a proxy or are using an absolute path 
-// if running on separate ports. We will revert the constant to the absolute path 
-// that matches your log output to ensure connectivity.
-
-// Since your logs show the client is contacting http://127.0.0.1:5000, 
-// let's use the explicit absolute URL for reliability during development.
-//const API_BASE_URL = 'http://127.0.0.1:5000/api'; 
 const API_BASE_URL = 'http://192.168.1.119:5000/api'; 
+console.log("API Base URL defined as:", API_BASE_URL); 
 
-console.log("API Base URL defined as:", API_BASE_URL); // Verification Log
+// --- Create Axios Instance with Interceptors ---
+const api = axios.create({
+    baseURL: API_BASE_URL,
+    timeout: 30000,
+    headers: {
+        'Content-Type': 'application/json',
+    }
+});
+
+// 1. Request Interceptor: Attach the current token to every request
+api.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
+
+// 2. Response Interceptor: Check for NEW token in headers (Sliding Session)
+api.interceptors.response.use(
+    (response) => {
+        // Check if the server sent a refreshed token
+        const newToken = response.headers['x-access-token'];
+        if (newToken) {
+            console.log("Session refreshed: New token received");
+            localStorage.setItem('access_token', newToken);
+        }
+        return response;
+    },
+    (error) => {
+        // Handle session expiration (401)
+        if (error.response && error.response.status === 401) {
+            console.warn("Session expired. Logging out.");
+            // Only clear if it's truly an auth error, not just a bad request
+            if (!window.location.pathname.includes('/login')) {
+                 localStorage.removeItem('access_token');
+                 // Ideally dispatch a logout action or redirect here, 
+                 // but throwing the error allows the UI to handle it (e.g. show message)
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 
 /**
  * Fetches chart data (OHLC + SSA components) from the backend API.
- * @param {string} symbol - The ticker symbol (e.g., 'BTC/USD').
- * @param {string} interval - The chart interval (e.g., '1day', '1h').
- * @param {number} l - The SSA window parameter L (if not adaptive).
- * @param {boolean} adaptive_l - Whether to use adaptive L calculation on the backend.
- * @returns {Promise<object>} A promise that resolves with the data object from the API.
- * @throws {Error} Throws an error if the fetch fails or the response is invalid.
+ * Uses the configured axios instance to handle tokens automatically.
  */
 export const getChartData = async (symbol, interval, l, adaptive_l) => {
-  // --- START OF JWT FIX ---
-
-  // 1. Retrieve the token from localStorage
-  const token = localStorage.getItem('access_token');
-
-  // 2. Define the headers, including Authorization
-  const headers = {
-    'Content-Type': 'application/json',
-  };
-  
-  if (token) {
-    // 3. Add the JWT token in the 'Bearer <token>' format
-    headers['Authorization'] = `Bearer ${token}`;
-  } else {
-    // Optional: Throw an error if no token is found for a protected route
-    console.error("No authentication token found in localStorage.");
-    // In a production app, you'd force a redirect to the login page here.
-    // We will let the API call fail to show the 401 error message for debugging.
-  }
-  
-  // --- END OF JWT FIX ---
-
   console.log(`Attempting to GET: ${API_BASE_URL}/chart-data with params:`, { symbol, interval, l, adaptive_l });
+  
   try {
-    
-    const response = await axios.get(`${API_BASE_URL}/chart-data`, {
+    // Use the 'api' instance, not raw 'axios'
+    const response = await api.get('/chart-data', {
       params: {
          symbol: symbol,
          interval: interval,
          l: l,
          adaptive_l: adaptive_l
-      },
-      headers: headers, // <-- Pass the authorization headers
-      timeout: 30000 // Set a timeout (e.g., 30 seconds)
+      }
     });
 
     // Check if the response structure looks okay before returning
     if (response.data && response.data.ohlc && response.data.ssa) {
        console.log(`API Call Success: Received ${response.data.ohlc.length} OHLC points.`);
-       return response.data; // Return the data part of the response
+       return response.data; 
     } else {
        console.error("API Call Error: Invalid data structure received", response.data);
        throw new Error("Invalid data structure received from server.");
@@ -73,24 +82,45 @@ export const getChartData = async (symbol, interval, l, adaptive_l) => {
   } catch (error) {
     // Log detailed error information
     if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
+      if (error.response.status === 401) {
+        console.error("API Call Error: Token expired or invalid (401)");
+        throw new Error("Your session has expired. Please log in again.");
+      }
       console.error("API Call Error:", error.response.status, error.response.data);
-      // NOTE: This will now catch the 401 and throw the appropriate error message
-      throw new Error(error.response.data.error || `Server responded with status ${error.response.status}`);
+      throw new Error(error.response.data.error || error.response.data.msg || `Server responded with status ${error.response.status}`);
+      
     } else if (error.request) {
-      // The request was made but no response was received
       console.error("API Call Error: No response received", error.request);
       throw new Error("Could not connect to the server. Is it running?");
     } else {
-      // Something happened in setting up the request that triggered an Error
       console.error('API Call Error:', error.message);
       throw new Error(`Error setting up API request: ${error.message}`);
     }
   }
 };
 
-// --- Add other API functions below later ---
-// Example:
-// export const loginUser = async (username, password) => { ... };
-// export const getWatchlist = async () => { ... };
+/**
+ * Sends a request to change the password for the currently logged-in user.
+ */
+export const changePassword = async (newPassword) => {
+    try {
+        // Use the 'api' instance
+        const response = await api.post('/change-password', { new_password: newPassword });
+
+        if (response.status !== 200) {
+            throw new Error(response.data.msg || `Server responded with status ${response.status}`);
+        }
+        return response.data;
+
+    } catch (error) {
+        if (error.response) {
+            if (error.response.status === 401) {
+              throw new Error("Your session has expired. Please log in again.");
+            }
+            throw new Error(error.response.data.msg || `Server responded with status ${error.response.status}`);
+        }
+        throw new Error(`Error setting up API request: ${error.message}`);
+    }
+};
+
+export default api;

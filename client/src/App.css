@@ -1,18 +1,19 @@
+/* client/src/App.css */
 .App {
-  /* Flex container setup */
-  display: flex;
-  flex-direction: column;
-  height: 100vh; /* Fallback for older browsers */
-  height: 100dvh; /* Use dynamic viewport height for mobile */
+  /* Only define critical height, background, and overflow properties */
+  /*height: 100vh;
+  height: 100dvh; */
   
-  /* Original app styles */
+  /* FIX: Ensure zero padding/margin on the root element to prevent overflow */
+  padding: 0; 
+  margin: 0;
+  
   background-color: #1e1e1e;
-  padding: 10px;
   font-size: 12px;
 
   /* --- FIX for Mobile Pinch-Zoom --- */
-  overflow: hidden;      /* Prevents "bounce" and scroll-bleed */
-  touch-action: none;   /* Disables all browser-level touch gestures */
+  overflow: hidden; 
+  touch-action: none;
 }
 
 .ChartWrapper {
@@ -21,7 +22,19 @@
   min-height: 0; /* CRITICAL: Allows flex item to shrink correctly */
 }
 
-/* --- THIS IS THE FIX for the blank mobile page --- */
+/* --- Global Body/HTML styles for dark theme initialization --- */
+body, html, #root {
+  background-color: #1a1a1a;
+  color: #d1d4dc;
+  height: 100dvh;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; 
+}
+
+
+/* --- ROTATION/LANDSCAPE NOTIFIER --- */
 .RotateNotifier {
   display: none; /* 1. It is HIDDEN by default */
   position: fixed;

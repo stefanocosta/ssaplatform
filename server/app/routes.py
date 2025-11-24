@@ -3,10 +3,10 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 # Import extensions/models that will be defined in __init__.py and models.py
-from . import db # Corrected import from previous step
-from app.models import User # Assuming User model is defined in models.py
+from . import db 
+from app.models import User 
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from sqlalchemy import select # Import select for 2.0 style queries
+from sqlalchemy import select 
 
 from .services import ssa_service, twelvedata_service, forecast_service
 
@@ -14,7 +14,7 @@ from .services import ssa_service, twelvedata_service, forecast_service
 bp = Blueprint('api', __name__, url_prefix='/api')
 
 
-# --- NEW: User Authentication Routes ---
+# --- NEW: User Authentication Routes (PRESERVED) ---
 
 @bp.route('/register', methods=['POST'])
 def register():
@@ -67,16 +67,14 @@ def login():
     if user is None or not user.check_password(password):
         return jsonify({"msg": "Bad username or password"}), 401
 
-    # FIX: Create a JWT token containing the user's ID as a STRING
+    # Create a JWT token containing the user's ID as a STRING
     access_token = create_access_token(identity=str(user.id))
     return jsonify(access_token=access_token, username=user.username), 200
 
-# Example of a protected endpoint (you might not need this now, but it shows how to protect endpoints)
 @bp.route('/user-info', methods=['GET'])
 @jwt_required()
 def user_info():
     """Returns basic info for the logged-in user."""
-    # FIX: get_jwt_identity returns a string, convert it back to an integer
     user_id_str = get_jwt_identity()
     try:
         user_id = int(user_id_str)
@@ -92,13 +90,13 @@ def user_info():
         return jsonify(user_id=user.id, username=user.username, email=user.email), 200
     return jsonify({"msg": "User not found"}), 404
 
-# --- END NEW: User Authentication Routes ---
+# --- END User Authentication Routes ---
 
 
-# --- EXISTING: Trading Data Routes (Now Protected by JWT) ---
+# --- TRADING DATA ROUTES (UPDATED) ---
 
 @bp.route('/chart-data', methods=['GET'])
-@jwt_required() # <-- Uncomment this line to protect your trading data
+@jwt_required()
 def get_chart_data():
     symbol = request.args.get('symbol', 'BTC/USD')
     interval = request.args.get('interval', '1day')
@@ -108,20 +106,23 @@ def get_chart_data():
     except ValueError:
         l_param = 30
 
-    # --- Fetching ---
+    # --- 1. Fetch Data ---
     print(f"Fetching FRESH data for {symbol} - {interval}")
     ohlc_data = twelvedata_service.get_twelvedata_ohlc(
         symbol, interval, current_app.config['TWELVE_DATA_API_KEY'], 500
     )
-    if ohlc_data is None:
+    if ohlc_data is None or not ohlc_data:
         return jsonify({"error": f"Failed to fetch data for {symbol}"}), 500
-
-    if not ohlc_data:
-         return jsonify({"error": "No OHLC data available for SSA"}), 500
 
     df = pd.DataFrame(ohlc_data)
     if 'close' not in df.columns or df['close'].isnull().all():
          return jsonify({"error": "Close price data missing or invalid after fetch"}), 500
+
+    # --- FIX 1: CHRONOLOGICAL SORTING ---
+    # API returns Newest->Oldest. We MUST sort Ascending (Oldest->Newest) for SSA/Forecast.
+    if 'time' in df.columns:
+        df['time'] = pd.to_numeric(df['time']) 
+        df.sort_values('time', ascending=True, inplace=True)
 
     close_prices = df['close'].values.flatten()
     times = df['time'].values
@@ -132,14 +133,14 @@ def get_chart_data():
 
     # Determine L
     if use_adaptive_l:
-        L = 39 # Fixed for now based on previous context, or use ssa_service.calculate_adaptive_L(close_prices)
+        L = 39 
     else:
         L = l_param
 
     if L < 2 or L >= N:
         L = max(2, min(N // 2, 30))
 
-    # Perform SSA
+    # --- 2. Perform SSA ---
     try:
         components = ssa_service.ssa_decomposition(close_prices, L)
     except Exception as e:
@@ -149,6 +150,29 @@ def get_chart_data():
     trend = components[0] if components.shape[0] > 0 else np.zeros_like(close_prices)
     cyclic = components[1:min(3, L)].sum(axis=0) if components.shape[0] > 1 and L > 1 else np.zeros_like(close_prices)
     noise = components[min(3, L):min(6, L)].sum(axis=0) if components.shape[0] >= min(3, L) and L > min(3, L) else np.zeros_like(close_prices)
+
+    # --- FIX 2: UNIFIED FORECAST CALCULATION ---
+    # Calculate forecast HERE using the same components to avoid double-loading
+    forecast_steps = 40
+    forecast_payload = []
+    try:
+        forecast_values = forecast_service.forecast_ssa_spectral(
+            components, 
+            forecast_steps=forecast_steps, 
+            min_component=1
+        )
+        # Use the last timestamp from the SORTED dataframe
+        last_timestamp = int(df['time'].iloc[-1])
+        future_times = forecast_service.generate_future_timestamps(last_timestamp, interval, forecast_steps)
+        
+        for t, v in zip(future_times, forecast_values):
+            forecast_payload.append({"time": int(t), "value": float(v)})
+            
+        print(f"Forecast calculated: {len(forecast_payload)} points")
+    except Exception as e:
+        print(f"Forecast calculation error: {e}")
+        # We continue even if forecast fails, returning empty array
+        forecast_payload = []
 
     # Prepare data for response
     cyclic_data = []
@@ -169,82 +193,27 @@ def get_chart_data():
     trend_data = [{"time": int(t), "value": float(v)} for t, v in zip(times, trend) if not np.isnan(v)]
 
     ohlc_data_serializable = []
-    for item in ohlc_data:
+    # Iterate over sorted DF
+    for index, row in df.iterrows():
         ohlc_data_serializable.append({
-            "time": int(item.get("time", 0)),
-            "open": float(item.get("open", 0.0)),
-            "high": float(item.get("high", 0.0)),
-            "low": float(item.get("low", 0.0)),
-            "close": float(item.get("close", 0.0)),
-            "volume": float(item.get("volume", 0.0))
+            "time": int(row['time']),
+            "open": float(row['open']),
+            "high": float(row['high']),
+            "low": float(row['low']),
+            "close": float(row['close']),
+            "volume": float(row['volume'])
         })
 
     response_data = {
         "ohlc": ohlc_data_serializable,
         "ssa": { "trend": trend_data, "cyclic": cyclic_data, "noise": noise_data },
-        "l_used": int(L)
+        "l_used": int(L),
+        "forecast": forecast_payload # <-- Unified forecast data
     }
 
     return jsonify(response_data)
 
 @bp.route('/forecast', methods=['GET'])
-@jwt_required() # <-- Uncomment this line to protect your forecasting data
 def get_forecast():
-    symbol = request.args.get('symbol', 'BTC/USD')
-    interval = request.args.get('interval', '1day')
-    use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
-    try:
-        l_param = int(request.args.get('l', 30))
-    except ValueError:
-        l_param = 30
-    
-    forecast_steps = 40 
-
-    # Fetch Data
-    ohlc_data = twelvedata_service.get_twelvedata_ohlc(
-        symbol, interval, current_app.config['TWELVE_DATA_API_KEY'], 500
-    )
-    
-    if not ohlc_data:
-        return jsonify({"error": "No data for forecast"}), 500
-
-    df = pd.DataFrame(ohlc_data)
-    close_prices = df['close'].values.flatten()
-    
-    # Determine L
-    N = len(close_prices)
-    if use_adaptive_l:
-        L = 39 
-    else:
-        L = l_param
-    L = max(2, min(N // 2, 30)) if (L < 2 or L >= N) else L
-
-    # Perform SSA
-    try:
-        components = ssa_service.ssa_decomposition(close_prices, L)
-    except Exception as e:
-        return jsonify({"error": f"SSA failed: {e}"}), 500
-
-    # Generate Forecast
-    try:
-        # --- MODIFIED: max_component parameter removed ---
-        forecast_values = forecast_service.forecast_ssa_spectral(
-            components, 
-            forecast_steps=forecast_steps, 
-            min_component=1
-        )
-        
-        # Generate future timestamps
-        last_timestamp = int(df['time'].iloc[-1])
-        future_times = forecast_service.generate_future_timestamps(last_timestamp, interval, forecast_steps)
-        
-        # Format for frontend
-        forecast_data = []
-        for t, v in zip(future_times, forecast_values):
-            forecast_data.append({"time": int(t), "value": float(v)})
-            
-        return jsonify({"forecast": forecast_data})
-        
-    except Exception as e:
-        print(f"Forecast error: {e}")
-        return jsonify({"error": f"Forecast failed: {e}"}), 500
+    # Deprecated: The frontend should now use the 'forecast' field from /chart-data
+    return jsonify({"error": "Deprecated. Use /chart-data"}), 410
