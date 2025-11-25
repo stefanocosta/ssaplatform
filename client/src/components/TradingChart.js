@@ -103,7 +103,7 @@ const TradingChart = ({
                 const panes = chartRef.current.panes();
                 const totalH = chartContainerRef.current.clientHeight;
                 if (panes && panes.length >= 3) {
-                    const fixedH = 200;
+                    const fixedH = 150;
                     const buffer = 10;
                     const availableForMain = totalH - (fixedH * 2) - buffer;
                     if (availableForMain > 50) {
@@ -195,7 +195,7 @@ const TradingChart = ({
             const isBuyHotspot = (recon < trend) && (price < recon);
             const isBuyNoise = (noiseVal < 0) && (noiseVal >= prevNoiseVal);
             if (isBuyHotspot && isBuyNoise) {
-                markers.push({ time: time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'Buy', size: 2 });
+                markers.push({ time: time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1.5 });
                 usedTimestamps.add(time);
                 continue;
             }
@@ -203,7 +203,7 @@ const TradingChart = ({
             const isSellHotspot = (recon > trend) && (price > recon);
             const isSellNoise = (noiseVal > 0) && (noiseVal <= prevNoiseVal);
             if (isSellHotspot && isSellNoise) {
-                markers.push({ time: time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'Sell', size: 2 });
+                markers.push({ time: time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: '', size: 1.5 });
                 usedTimestamps.add(time);
             }
         }
@@ -372,6 +372,30 @@ const TradingChart = ({
             chartInstance.priceScale('cyclic').applyOptions({ borderColor: '#485158' });
             chartInstance.priceScale('noise').applyOptions({ borderColor: '#485158' });
 
+            //setChartReady(true);
+            //fetchData();
+
+            // Force pane layout immediately before data loads
+            try {
+                // IMPORTANT: Make sure this matches the height you chose in handleResetView
+                const fixedH = 150; 
+                const buffer = 10;
+                const totalH = currentChartContainer.clientHeight;
+                const availableForMain = totalH - (fixedH * 2) - buffer;
+
+                // We use 'chartInstance' here because 'chartRef.current' might not be fully ready in React state yet
+                const panes = chartInstance.panes(); 
+                
+                if (panes && panes.length >= 3 && availableForMain > 50) {
+                    // Pane 0 = Main, Pane 1 = Cyclic, Pane 2 = Noise
+                    panes[1].setHeight(fixedH);
+                    panes[2].setHeight(fixedH);
+                    panes[0].setHeight(availableForMain);
+                }
+            } catch (e) {
+                console.warn("Initial pane resize failed", e);
+            }
+
             resizeObserver.current = new ResizeObserver(entries => {
                 if (!chartRef.current) return;
                 const { width, height } = entries[0].contentRect;
@@ -383,22 +407,39 @@ const TradingChart = ({
             });
             resizeObserver.current.observe(currentChartContainer);
 
-            setChartReady(true);
-            fetchData();
+            // =========================================================
+            // FIX: DEBOUNCE DATA FETCH
+            // Use a timeout to absorb rapid prop updates (like interval + lValue)
+            // =========================================================
+            const fetchDelay = setTimeout(() => {
+                // Double check chart wasn't destroyed during the delay
+                if (chartRef.current) {
+                    setChartReady(true);
+                    fetchData();
+                }
+            }, 50); // 50ms delay is invisible to user but stops double-fetching
+
+            // CLEANUP FUNCTION
+            return () => {
+                clearTimeout(fetchDelay); // <--- CANCEL the fetch if props change quickly
+                
+                if (resizeObserver.current) resizeObserver.current.disconnect();
+                if (chartRef.current) { 
+                    chartRef.current.remove(); 
+                    chartRef.current = null; 
+                }
+                seriesRefs.current = {};
+                markersInstanceRef.current = null;
+                setChartReady(false);
+            };
 
         } catch (err) {
             console.error("Setup error:", err);
             setError(`Init Error: ${err.message}`);
             setLoading(false);
         }
-
-        return () => {
-            if (resizeObserver.current) resizeObserver.current.disconnect();
-            if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
-            seriesRefs.current = {};
-            markersInstanceRef.current = null;
-            setChartReady(false);
-        };
+        // Note: The return above handles the cleanup for the success path.
+        // If we error out, we don't need special cleanup beyond React's unmount.
     }, [symbol, interval, lValue, useAdaptiveL]);
 
     // ================================================================== //
@@ -516,27 +557,61 @@ const TradingChart = ({
                 const intervalMs = intervalToMs(interval);
                 const ws = new WebSocket(`wss://ws.twelvedata.com/v1/quotes/price?apikey=${apiKey}`);
                 wsRef.current = ws;
-                ws.onopen = () => { setIsRealtime(true); ws.send(JSON.stringify({ action: "subscribe", params: { symbols: symbol } })); };
+
+                ws.onopen = () => { 
+                    setIsRealtime(true); 
+                    // Subscribe to the symbol
+                    ws.send(JSON.stringify({ action: "subscribe", params: { symbols: symbol } })); 
+                };
+
+                // --- UPDATED ERROR HANDLING HERE ---
                 ws.onmessage = (e) => {
                     const d = JSON.parse(e.data);
+
+                    // 1. Handle Price Updates
                     if (d.event === "price" && seriesRefs.current.mainSeries) {
                         const price = parseFloat(d.price);
-                        const time = Math.floor(getCandleStartTime((d.timestamp || Date.now()/1000)*1000, intervalMs)/1000);
+                        // Use d.timestamp if available, otherwise fallback to Date.now()
+                        // TwelveData timestamps are usually in seconds or milliseconds depending on the endpoint, 
+                        // but for quotes/price it's often a unix timestamp.
+                        const rawTime = d.timestamp ? d.timestamp : Date.now() / 1000;
+                        
+                        // Ensure we align the time to the chart interval
+                        const time = Math.floor(getCandleStartTime(rawTime * 1000, intervalMs) / 1000);
+
                         if (internalChartType === 'line') {
                             seriesRefs.current.mainSeries.update({ time, value: price });
                         } else {
-                            if (!currentCandleRef.current || currentCandleRef.current.time !== time) currentCandleRef.current = { time, open: price, high: price, low: price, close: price };
-                            else {
+                            if (!currentCandleRef.current || currentCandleRef.current.time !== time) {
+                                currentCandleRef.current = { time, open: price, high: price, low: price, close: price };
+                            } else {
                                 currentCandleRef.current.high = Math.max(currentCandleRef.current.high, price);
                                 currentCandleRef.current.low = Math.min(currentCandleRef.current.low, price);
                                 currentCandleRef.current.close = price;
                             }
                             seriesRefs.current.mainSeries.update(currentCandleRef.current);
                         }
+                    } 
+                    // 2. Handle API Errors (Not Authorized / Invalid Symbol)
+                    else if (d.status === "error") {
+                        console.error("TwelveData WS Error:", d.message);
+                        setError(`Live Error: ${d.message}`); // Show error in UI
+                        setIsRealtime(false); // Turn off "LIVE" badge
+                        if (wsRef.current) wsRef.current.close();
                     }
                 };
+
+                // 3. Handle Network Errors
+                ws.onerror = (err) => {
+                    console.error("WebSocket connection error", err);
+                    setError("Live connection failed.");
+                    setIsRealtime(false);
+                };
+
             }, 300);
-        } else { setIsRealtime(false); }
+        } else { 
+            setIsRealtime(false); 
+        }
 
         if (autoUpdate || enableRealtime) setupAlignedTimer();
 

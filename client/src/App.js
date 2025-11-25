@@ -193,7 +193,7 @@ function App() {
           {/* Absolute positioning forces the chart to fill the wrapper exactly */}
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
             <TradingChart
-              key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
+             // key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
               symbol={finalSymbol}
               interval={inputInterval}
               lValue={inputLValue}

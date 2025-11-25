@@ -1,8 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import { LogOut, User as UserIcon, Lock, Mail, ChevronRight } from 'lucide-react';
 
-// Custom input component for consistent styling
-// MOVED OUTSIDE to prevent re-rendering and focus loss on every keystroke
+// ================================================================== //
+// CLOCK COMPONENT (Updated with Day Number)
+// ================================================================== //
+const Clock = () => {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (date) => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const d = days[date.getDay()];
+    const dayNum = date.getDate(); // Returns day of month (e.g., 15)
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    const s = String(date.getSeconds()).padStart(2, '0');
+    
+    // Format: "Tue 15, 10:39:59"
+    return `${d} ${dayNum}, ${h}:${m}:${s}`;
+  };
+
+  return (
+    <div style={{ 
+      fontFamily: 'monospace', 
+      fontSize: '16px', 
+      color: '#00bcd4', // Cyan to match the theme
+      fontWeight: 'bold',
+      letterSpacing: '1px'
+    }}>
+      {formatTime(time)}
+    </div>
+  );
+};
+
+// ================================================================== //
+// AUTH INPUT COMPONENT
+// ================================================================== //
 const AuthInput = ({ type, placeholder, value, onChange, Icon, onKeyDown }) => (
   <div className="relative mb-4">
     <Icon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -17,6 +54,9 @@ const AuthInput = ({ type, placeholder, value, onChange, Icon, onKeyDown }) => (
   </div>
 );
 
+// ================================================================== //
+// MAIN AUTH FORM COMPONENT
+// ================================================================== //
 const AuthForm = ({ children }) => {
   // Check for JWT token on component mount
   const initialToken = localStorage.getItem('access_token');
@@ -131,7 +171,7 @@ const AuthForm = ({ children }) => {
             backgroundColor: '#2d2d2d', 
             padding: '5px 15px', 
             display: 'flex', 
-            justifyContent: 'space-between', // Align title left, user info right
+            justifyContent: 'space-between', // Align title left, clock center, user info right
             alignItems: 'center',
             color: '#d1d4dc',
             flexShrink: 0, 
@@ -148,7 +188,10 @@ const AuthForm = ({ children }) => {
            SSA Trading Platform
           </h1>
 
-          {/* 2. User Info Badge and Logout */}
+          {/* 2. CLOCK INSERTED HERE */}
+          <Clock />
+
+          {/* 3. User Info Badge and Logout */}
           <div 
             className="flex items-center gap-2"
             style={{ 
