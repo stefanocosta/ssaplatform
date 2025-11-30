@@ -185,7 +185,7 @@ const AuthForm = ({ children }) => {
              fontSize: '1.2rem',
              margin: 0 
            }}>
-           SSA Trading Platform
+           SSA Trading Platform 1.1
           </h1>
 
           {/* 2. CLOCK INSERTED HERE */}

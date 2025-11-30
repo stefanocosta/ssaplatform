@@ -19,7 +19,7 @@ function App() {
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
   const assetCategories = {
-    'Crypto': ['BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD'],
+    'Crypto': ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD'],
     'Forex': ['EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY'],
     'Stocks': ['AAPL', 'AMZN', 'GOOG', 'NVDA', 'META']
   };
