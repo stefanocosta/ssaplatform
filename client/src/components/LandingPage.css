@@ -1,93 +1,18 @@
-/* client/src/App.css */
-.App {
-  /* Only define critical height, background, and overflow properties */
-  
-  /* FIX: Ensure zero padding/margin on the root element to prevent overflow */
-  padding: 0; 
-  margin: 0;
-  
-  background-color: #1e1e1e;
-  font-size: 12px;
-
-  /* --- FIX for Mobile Pinch-Zoom --- */
-  overflow: hidden; 
-  touch-action: none;
-}
-
-.ChartWrapper {
-  flex-grow: 1; /* This div will grow to fill ALL remaining vertical space */
-  position: relative; /* Establishes positioning context for chart */
-  min-height: 0; /* CRITICAL: Allows flex item to shrink correctly */
-}
-
-/* --- Global Body/HTML styles for dark theme initialization --- */
-body, html, #root {
-  background-color: #1a1a1a;
-  color: #d1d4dc;
-  height: 100dvh;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  /* Keep overflow hidden for the Chart, 
-     but we fix Landing Page scrolling in .landing-container below */
-  overflow: hidden; 
-}
-
-
-/* --- ROTATION/LANDSCAPE NOTIFIER --- */
-.RotateNotifier {
-  display: none; /* 1. It is HIDDEN by default */
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #1e1e1e;
-  color: #d1d4dc;
-  
-  /* Use flex to center the content */
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  font-size: 16px;
-  z-index: 9999;
-}
-
-/* This media query targets small devices (like phones) 
-  that are in landscape (horizontal) mode.
-*/
-@media (orientation: landscape) and (max-height: 500px) {
-  .App {
-    display: none; /* Hide the app */
-  }
-  .RotateNotifier {
-    display: flex; /* 2. It is SHOWN (as a flex container) when this query is active */
-  }
-}
-
-/* ========================================= */
-/* LANDING PAGE STYLES (New)           */
-/* ========================================= */
-
+/* client/src/components/LandingPage.css */
 :root {
-    --bg-dark: #121212;
+    --bg-dark: #121212; /* Matching your platform's dark background */
     --bg-card: #1e1e1e;
     --text-primary: #ffffff;
     --text-secondary: #b3b3b3;
-    --accent-blue: #1c86ff; 
-    --accent-green: #00c853; 
+    --accent-blue: #1c86ff; /* Matching your platform's blue line */
+    --accent-green: #00c853; /* Matching your signals */
 }
 
 .landing-container {
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-dark);
     color: var(--text-primary);
-    
-    /* FIX: Allows landing page to scroll even though body is hidden */
-    height: 100vh;
-    overflow-y: auto; 
-    
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
@@ -144,26 +69,26 @@ body, html, #root {
     background-color: #0060df;
 }
 
-/* --- Hero Section (The Banner) --- */
+/* --- Hero Section --- */
 .hero-section {
     position: relative;
-    /* FIX: Set to 55vh so features are visible without scrolling too much */
-    height: 55vh; 
-    min-height: 400px;
-    
+    height: 80vh; /* Takes up most of the initial screen */
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    margin-top: 60px; /* Offset for fixed nav */
+    margin-top: 60px; /* Offset fixed nav */
     
+    /* --- BACKGROUND IMAGE INSTRUCTIONS --- */
+    /* 1. Put your platform screenshot (e.g., platform_bg.jpg) into client/public/ */
+    /* 2. Uncomment the line below: */
+    /* background-image: url('/platform_bg.jpg'); */
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    /* Uncomment if you added the image to public folder */
-    background-image: url('/platform_bg.png'); 
 }
 
+/* Dark overlay to make text readable on top of the image */
 .hero-overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -212,15 +137,14 @@ body, html, #root {
     display: flex;
     justify-content: center;
     gap: 30px;
-    /* FIX: Reduced padding to fit better on screen */
-    padding: 40px 20px; 
+    padding: 80px 20px;
     background-color: var(--bg-dark);
     flex-wrap: wrap;
 }
 
 .feature-card {
     background-color: var(--bg-card);
-    padding: 25px;
+    padding: 30px;
     border-radius: 12px;
     max-width: 500px;
     flex: 1;
@@ -236,7 +160,6 @@ body, html, #root {
 .feature-card p {
     color: var(--text-secondary);
     line-height: 1.6;
-    font-size: 14px;
 }
 
 /* --- Footer & Disclaimer --- */

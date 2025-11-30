@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; // 1. Import Router
 import TradingChart from './components/TradingChart';
 import AuthForm from './components/AuthForm'; 
+import LandingPage from './components/LandingPage'; // 2. Import Landing Page
 import './App.css';
 
-function App() {
+// 3. I renamed your original 'App' function to 'Platform'. 
+// NO LOGIC WAS CHANGED INSIDE THIS FUNCTION.
+function Platform() {
   const [inputSymbol, setInputSymbol] = useState('BTC/USD'); 
   const [inputCustomSymbol, setInputCustomSymbol] = useState(''); 
   const [inputInterval, setInputInterval] = useState('1day');
@@ -86,12 +90,12 @@ function App() {
         style={{ 
           display: 'flex', 
           flexDirection: 'column', 
-          height: '100%', // Fill the AuthForm container
+          height: '100%', 
           width: '100%',
           overflow: 'hidden' 
         }} 
       >
-        {/* CONTROL BAR - Fixed Height (Auto) */}
+        {/* CONTROL BAR */}
         <div style={{ 
           flex: '0 0 auto', 
           color: '#d1d4dc', 
@@ -179,21 +183,19 @@ function App() {
           </span>
         </div>
 
-        {/* CHART WRAPPER - Flex Grow with Relative Positioning */}
+        {/* CHART WRAPPER */}
         <div 
           className="ChartWrapper"
           style={{ 
             flex: '1 1 auto', 
-            position: 'relative', // Key: establish stacking context
+            position: 'relative', 
             overflow: 'hidden',
             width: '100%',
-            minHeight: 0 // Allow shrinking
+            minHeight: 0 
           }} 
         >
-          {/* Absolute positioning forces the chart to fill the wrapper exactly */}
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
             <TradingChart
-             // key={`${finalSymbol}-${inputInterval}-${inputLValue}-${inputUseAdaptiveL}-${lookupCount}`}
               symbol={finalSymbol}
               interval={inputInterval}
               lValue={inputLValue}
@@ -212,6 +214,24 @@ function App() {
         <p>Please rotate your device to portrait mode</p>
       </div>
     </AuthForm>
+  );
+}
+
+// 4. This is the NEW App component that handles the routing
+function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* Route 1: The Landing Page (Root URL) */}
+        <Route path="/" element={<LandingPage />} />
+
+        {/* Route 2: The Main Platform (Your original app) */}
+        <Route path="/auth" element={<Platform />} />
+
+        {/* Optional: Redirect unknown paths to Landing Page */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Router>
   );
 }
 

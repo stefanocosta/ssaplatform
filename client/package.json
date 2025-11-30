@@ -5,7 +5,8 @@
     "lightweight-charts": "^5.0.0",
     "lucide-react": "^0.554.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.9.6"
   },
   "scripts": {
     "start": "cross-env PORT=4000 react-scripts start",
