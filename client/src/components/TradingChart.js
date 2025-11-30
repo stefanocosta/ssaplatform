@@ -37,7 +37,7 @@ const TradingChart = ({
 
     const [showTrend, setShowTrend] = useState(true);
     const [showReconstructed, setShowReconstructed] = useState(true);
-    const [showSignals, setShowSignals] = useState(false);
+    const [showSignals, setShowSignals] = useState(true);
     const [countdown, setCountdown] = useState(60);
     const countdownIntervalRef = useRef(null);
     const [internalChartType, setInternalChartType] = useState('line');
@@ -332,6 +332,10 @@ const TradingChart = ({
     // CHART SETUP + MARKERS
     // ================================================================== //
     useEffect(() => {
+
+        //  Force loading state immediately when these props change
+        setLoading(true);
+        
         const currentChartContainer = chartContainerRef.current;
         if (!currentChartContainer) return;
 
@@ -697,7 +701,17 @@ const TradingChart = ({
 
             {loading && !error && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '5px' }}>Loading chart data...</div>}
             {error && <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)', color: 'red', background: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '5px', zIndex: 20, maxWidth: '80%' }}>Error: {error}</div>}
-            <div ref={chartContainerRef} style={{ width: '100%', height: '100%' }} />
+            <div 
+                ref={chartContainerRef} 
+                style={{ 
+                    width: '100%', 
+                    height: '100%',
+                    // This is the key: Hide the chart visually while loading
+                    opacity: loading ? 0 : 1, 
+                    // Optional: makes the reappearance smooth
+                    transition: 'opacity 0.2s ease-in' 
+                }} 
+            />
         </div>
     );
 };

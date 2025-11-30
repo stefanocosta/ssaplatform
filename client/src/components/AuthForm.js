@@ -72,7 +72,7 @@ const AuthForm = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   // NOTE: This URL should match the running Flask server's address
-  const API_BASE_URL = 'http://192.168.1.119:5000/api'; 
+  const API_BASE_URL = '/api'; 
 
   // Function to handle both Login and Registration submission
   const handleSubmit = async (e) => {

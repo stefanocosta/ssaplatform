@@ -11,7 +11,7 @@ function App() {
   const [inputUseAdaptiveL, setInputUseAdaptiveL] = useState(true);
   const [inputIsLive, setInputIsLive] = useState(false);
   const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
-  const [inputShowHotspots, setInputShowHotspots] = useState(true); 
+  const [inputShowHotspots, setInputShowHotspots] = useState(false); 
   const [inputShowForecast, setInputShowForecast] = useState(false); 
   const [lookupCount, setLookupCount] = useState(0);
   const [finalSymbol, setFinalSymbol] = useState('BTC/USD');
