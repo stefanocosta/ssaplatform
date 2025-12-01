@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; // 1. Import Router
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; 
 import TradingChart from './components/TradingChart';
 import AuthForm from './components/AuthForm'; 
-import LandingPage from './components/LandingPage'; // 2. Import Landing Page
+import LandingPage from './components/LandingPage'; 
 import './App.css';
 
-// 3. I renamed your original 'App' function to 'Platform'. 
-// NO LOGIC WAS CHANGED INSIDE THIS FUNCTION.
 function Platform() {
   const [inputSymbol, setInputSymbol] = useState('BTC/USD'); 
   const [inputCustomSymbol, setInputCustomSymbol] = useState(''); 
   const [inputInterval, setInputInterval] = useState('1day');
   const [inputLValue, setInputLValue] = useState(30);
   const [inputUseAdaptiveL, setInputUseAdaptiveL] = useState(true);
+  
+  // We keep the state definition to prevent errors, defaulting to false.
+  // Since the button is removed, this will never become true.
   const [inputIsLive, setInputIsLive] = useState(false);
+  
   const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
   const [inputShowHotspots, setInputShowHotspots] = useState(false); 
   const [inputShowForecast, setInputShowForecast] = useState(false); 
@@ -51,6 +53,7 @@ function Platform() {
     setInputInterval(event.target.value);
   };
 
+  // This handler exists but won't be called since the input is removed
   const handleLiveToggle = (event) => {
     setInputIsLive(event.target.checked);
   };
@@ -176,10 +179,16 @@ function Platform() {
               Auto
             </label>
             
-            <label style={{ color: inputIsLive ? '#00ff00' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
+            {/* --- HIDDEN LIVE BUTTON ---
+               I have commented out the Live button below.
+               Because inputIsLive defaults to false, the chart will simply not connect to websockets.
+            */}
+            {/* <label style={{ color: inputIsLive ? '#00ff00' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
               <input type="checkbox" checked={inputIsLive} onChange={handleLiveToggle} style={{ marginRight: '4px' }} />
               Live
             </label>
+            */}
+
           </span>
         </div>
 
@@ -201,7 +210,7 @@ function Platform() {
               lValue={inputLValue}
               useAdaptiveL={inputUseAdaptiveL}
               apiKey={TWELVE_DATA_API_KEY}
-              enableRealtime={inputIsLive}
+              enableRealtime={inputIsLive} 
               autoUpdate={inputAutoUpdate}
               showHotspots={inputShowHotspots} 
               showForecast={inputShowForecast}
@@ -217,18 +226,12 @@ function Platform() {
   );
 }
 
-// 4. This is the NEW App component that handles the routing
 function App() {
   return (
     <Router>
       <Routes>
-        {/* Route 1: The Landing Page (Root URL) */}
         <Route path="/" element={<LandingPage />} />
-
-        {/* Route 2: The Main Platform (Your original app) */}
         <Route path="/auth" element={<Platform />} />
-
-        {/* Optional: Redirect unknown paths to Landing Page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
