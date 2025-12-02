@@ -12,8 +12,6 @@ function Platform() {
   const [inputLValue, setInputLValue] = useState(30);
   const [inputUseAdaptiveL, setInputUseAdaptiveL] = useState(true);
   
-  // We keep the state definition to prevent errors, defaulting to false.
-  // Since the button is removed, this will never become true.
   const [inputIsLive, setInputIsLive] = useState(false);
   
   const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
@@ -25,9 +23,9 @@ function Platform() {
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
   const assetCategories = {
-    'Crypto': ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD'],
+    'Crypto': ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'DOGE/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD'],
     'Forex': ['EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY'],
-    'Stocks': ['AAPL', 'AMZN', 'GOOG', 'NVDA', 'META']
+    'Stocks': ['AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
   };
 
   useEffect(() => {
@@ -53,11 +51,6 @@ function Platform() {
     setInputInterval(event.target.value);
   };
 
-  // This handler exists but won't be called since the input is removed
-  const handleLiveToggle = (event) => {
-    setInputIsLive(event.target.checked);
-  };
-
   const handleAutoUpdateToggle = (event) => {
     setInputAutoUpdate(event.target.checked);
   };
@@ -80,9 +73,13 @@ function Platform() {
     setLookupCount(c => c + 1);
   };
 
-  const handleSymbolKeyPress = (event) => {
-    if (event.key === 'Enter') {
-      handleLookup();
+  // --- FIX: CHANGED TO FORM SUBMIT HANDLER ---
+  const handleCustomSubmit = (event) => {
+    event.preventDefault(); // Prevent page reload
+    handleLookup();
+    // Optional: Hide keyboard on mobile after search
+    if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
     }
   };
 
@@ -132,15 +129,30 @@ function Platform() {
             </select>
 
             {inputSymbol === 'CUSTOM' && (
-              <input 
-                type="text"
-                value={inputCustomSymbol}
-                onChange={handleCustomSymbolChange}
-                onKeyPress={handleSymbolKeyPress} 
-                onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())}
-                placeholder="Type & Press Enter"
-                style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555', width: '100px', marginLeft: '5px' }}
-              />
+              /* --- FIX: WRAPPED IN FORM FOR MOBILE KEYBOARD SUPPORT --- */
+              <form 
+                onSubmit={handleCustomSubmit} 
+                style={{ display: 'inline-block', margin: 0, padding: 0 }}
+              >
+                <input 
+                  type="text"
+                  value={inputCustomSymbol}
+                  onChange={handleCustomSymbolChange}
+                  onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())}
+                  placeholder="Type & Press Enter"
+                  /* KEYBOARD HINTS FOR MOBILE: */
+                  enterKeyHint="search"
+                  inputMode="text"
+                  style={{ 
+                    padding: '5px', 
+                    backgroundColor: '#3c3c3c', 
+                    color: 'white', 
+                    border: '1px solid #555', 
+                    width: '100px', 
+                    marginLeft: '5px' 
+                  }}
+                />
+              </form>
             )}
           </span>
 
@@ -178,17 +190,6 @@ function Platform() {
               <input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{ marginRight: '4px' }} />
               Auto
             </label>
-            
-            {/* --- HIDDEN LIVE BUTTON ---
-               I have commented out the Live button below.
-               Because inputIsLive defaults to false, the chart will simply not connect to websockets.
-            */}
-            {/* <label style={{ color: inputIsLive ? '#00ff00' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
-              <input type="checkbox" checked={inputIsLive} onChange={handleLiveToggle} style={{ marginRight: '4px' }} />
-              Live
-            </label>
-            */}
-
           </span>
         </div>
 

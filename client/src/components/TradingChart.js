@@ -535,8 +535,12 @@ const TradingChart = ({
                         seriesRefs.current.forecast.setData(forecastData);
                     }
 
-                    if (seriesRefs.current.current.cyclicZeroLine) seriesRefs.current.cyclicZeroLine.setData(coloredTrendData.map(p => ({ time: p.time, value: 0, color: p.color })));
-                    if (seriesRefs.current.noiseZeroLine) seriesRefs.current.noiseZeroLine.setData(coloredCyclicData.map(p => ({ time: p.time, value: 0, color: p.color })));
+                    if (seriesRefs.current.cyclicZeroLine) {
+                        seriesRefs.current.cyclicZeroLine.setData(coloredTrendData.map(p => ({ time: p.time, value: 0, color: p.color })));
+                    }
+                    if (seriesRefs.current.noiseZeroLine) {
+                        seriesRefs.current.noiseZeroLine.setData(coloredCyclicData.map(p => ({ time: p.time, value: 0, color: p.color })));
+                    }
 
                     updateMarkers();
                 }
@@ -544,14 +548,45 @@ const TradingChart = ({
         };
 
         const setupAlignedTimer = () => {
+            // Clear existing timers
             if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-            if (realtimeIntervalRef.current) { clearInterval(realtimeIntervalRef.current); clearTimeout(realtimeIntervalRef.current); }
+            if (realtimeIntervalRef.current) { 
+                clearInterval(realtimeIntervalRef.current); 
+                clearTimeout(realtimeIntervalRef.current); 
+            }
+
             const now = new Date();
-            const secondsRemaining = 60 - now.getSeconds();
+            const currentSeconds = now.getSeconds();
+            
+            // --- LOGIC CHANGE HERE ---
+            // We want to target 4 seconds AFTER the minute starts 
+            // to allow the server time to fetch and save data.
+            const targetSecond = 4; 
+            
+            let secondsRemaining = targetSecond - currentSeconds;
+            if (secondsRemaining <= 0) {
+                // If we are past the :04 mark (e.g., it's :10), 
+                // wait for the next minute's :04
+                secondsRemaining += 60;
+            }
+
+            // Update the UI countdown immediately
             setCountdown(secondsRemaining);
-            countdownIntervalRef.current = setInterval(() => setCountdown(s => (s > 0 ? s - 1 : 60)), 1000);
+
+            // 1. Set the visual countdown ticker
+            countdownIntervalRef.current = setInterval(() => {
+                setCountdown(s => {
+                    if (s > 1) return s - 1;
+                    return 60; // Reset to 60 when it hits 0
+                });
+            }, 1000);
+
+            // 2. Set the actual data fetch trigger
             realtimeIntervalRef.current = setTimeout(() => {
+                // Run the first refresh
                 runPeriodicRefresh();
+                
+                // Then repeat every 60 seconds
                 realtimeIntervalRef.current = setInterval(runPeriodicRefresh, 60000);
             }, secondsRemaining * 1000);
         };

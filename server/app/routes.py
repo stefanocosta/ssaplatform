@@ -9,6 +9,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from sqlalchemy import select 
 
 from .services import ssa_service, twelvedata_service, forecast_service
+from app.services.data_manager import get_historical_data
 
 # The main blueprint for API routes (including trading and auth)
 bp = Blueprint('api', __name__, url_prefix='/api')
@@ -107,10 +108,15 @@ def get_chart_data():
         l_param = 30
 
     # --- 1. Fetch Data ---
-    print(f"Fetching FRESH data for {symbol} - {interval}")
-    ohlc_data = twelvedata_service.get_twelvedata_ohlc(
-        symbol, interval, current_app.config['TWELVE_DATA_API_KEY'], 500
-    )
+    #print(f"Fetching FRESH data for {symbol} - {interval}")
+    api_key = current_app.config['TWELVE_DATA_API_KEY']
+
+    # Use Data Manager to get cached data or fetch if missing
+    ohlc_data = get_historical_data(symbol, interval, api_key, limit=500)
+
+    #ohlc_data = twelvedata_service.get_twelvedata_ohlc(
+    #    symbol, interval, current_app.config['TWELVE_DATA_API_KEY'], 500
+    #)
     if ohlc_data is None or not ohlc_data:
         return jsonify({"error": f"Failed to fetch data for {symbol}"}), 500
 
