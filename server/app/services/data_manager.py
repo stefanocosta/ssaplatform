@@ -1,8 +1,8 @@
 import requests
 import calendar
 import time
-import pandas as pd # <--- Added pandas import
-from datetime import datetime, timedelta
+import pandas as pd
+from datetime import datetime, timedelta, timezone
 from app import db
 from app.models import MarketData
 
@@ -11,9 +11,14 @@ TRACKED_ASSETS = ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'DOGE/US
     'EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY',
     'AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
 
-
 _api_counter = 0
 _last_reset_time = time.time()
+
+# --- CONFIGURATION ---
+# We increase the cooldown to 55s because the daemon runs every 60s.
+# We don't want the web-workers fighting the daemon for the same data.
+COOLDOWN_1MIN = 55 
+FETCH_COOLDOWN = {}
 
 def track_api_call(source="Unknown"):
     global _api_counter, _last_reset_time
@@ -24,10 +29,24 @@ def track_api_call(source="Unknown"):
     _api_counter += 1
     print(f"💰 [API] Call #{_api_counter}/55 | Source: {source}")
 
-FETCH_COOLDOWN = {}
-COOLDOWN_1MIN = 10 
+def get_interval_seconds(interval):
+    """Returns the duration of an interval in seconds for staleness calculations."""
+    mapping = {
+        '1min': 60,
+        '5min': 300,
+        '15min': 900,
+        '30min': 1800,
+        '1h': 3600,
+        '2h': 7200,
+        '4h': 14400,
+        '1day': 86400,
+        '1week': 604800,
+        '1month': 2592000
+    }
+    return mapping.get(interval, 60)
 
 def get_historical_data(symbol, interval, api_key, limit=300):
+    # If asset is not tracked, fall back to direct API call
     if symbol not in TRACKED_ASSETS:
         return fetch_from_api(symbol, interval, api_key, limit, source="Custom")
 
@@ -44,16 +63,26 @@ def get_historical_data(symbol, interval, api_key, limit=300):
     data_map = {d['time']: d for d in db_data}
 
     # =========================================================
-    # UNIVERSAL GAP HEALER
+    # UNIVERSAL GAP HEALER (DYNAMIC TOLERANCE)
     # =========================================================
     if db_data:
         last_db_timestamp = data_query[-1].time
+        # Calculate how long ago the last candle started
         time_diff = (datetime.utcnow() - last_db_timestamp).total_seconds()
         
-        # --- 1. GAP DETECTED (> 5 mins) ---
-        if time_diff > 300:
+        # Determine allowed gap based on interval duration
+        interval_secs = get_interval_seconds(interval)
+        
+        # We allow the gap to be the length of the candle + 5 minutes buffer.
+        # e.g., A 1-hour candle is valid for 65 minutes from its start time.
+        allowed_gap = interval_secs + 300 
+        
+        # --- 1. GAP DETECTED (> Allowed Duration) ---
+        if time_diff > allowed_gap:
+            track_api_call(f"Universal GapRepair {symbol} {interval} (Diff: {int(time_diff)}s > {allowed_gap}s)")
+            
             # Fetch 1000 candles to patch the hole
-            repair_candles = fetch_from_api(symbol, '1min', api_key, outputsize=1000, source="Universal GapRepair")
+            repair_candles = fetch_from_api(symbol, '1min', api_key, outputsize=1000, source=f"Universal GapRepair {symbol}")
             
             if repair_candles:
                 # 1. Save 1min data (Fixes 1min chart)
@@ -70,7 +99,6 @@ def get_historical_data(symbol, interval, api_key, limit=300):
                 # 4. If user asked for aggregate (e.g. 1h), we must reload DB data
                 # because repair_aggregates just saved new 1h candles to DB
                 if interval != '1min':
-                    # Quick reload of just the new data
                     new_agg_query = MarketData.query.filter_by(symbol=symbol, interval=interval).order_by(MarketData.time.asc()).all()
                     db_data = [row.to_dict() for row in new_agg_query]
                     data_map = {d['time']: d for d in db_data}
@@ -82,13 +110,15 @@ def get_historical_data(symbol, interval, api_key, limit=300):
                 data_map[synthetic_candle['time']] = synthetic_candle
         
         # --- 3. HOT FETCH (1min Only) ---
+        # Only run this if the data is slightly old (>65s) AND we haven't fetched recently.
+        # The daemon runs every 60s, so normally the DB is fresh enough.
         elif interval == '1min':
             cache_key = f"{symbol}_{interval}"
             current_time = time.time()
             last_fetch = FETCH_COOLDOWN.get(cache_key, 0)
             
-            if (current_time - last_fetch > COOLDOWN_1MIN) and (time_diff > 10):
-                latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source="HotFetch 1m")
+            if (current_time - last_fetch > COOLDOWN_1MIN) and (time_diff > 65):
+                latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source=f"HotFetch 1m {symbol}")
                 FETCH_COOLDOWN[cache_key] = time.time()
                 if latest_candles:
                     for candle in latest_candles:
