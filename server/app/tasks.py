@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+import calendar
 from datetime import datetime, timezone
 from app import db, create_app
 from app.models import MarketData
@@ -19,7 +20,6 @@ def update_market_data():
     with app.app_context():
         api_key = app.config.get('TWELVE_DATA_API_KEY')
         
-        # [DEBUG] Check for Missing Key
         if not api_key: 
             print("❌ [DAEMON ERROR] No API Key found in config! Aborting.")
             return
@@ -30,7 +30,6 @@ def update_market_data():
         for chunk in asset_chunks:
             symbols_str = ",".join(chunk)
             
-            # This will show up in your 'check_status' script
             track_api_call(f"Daemon Batch ({len(chunk)} assets)")
 
             url = "https://api.twelvedata.com/time_series"
@@ -45,10 +44,18 @@ def update_market_data():
                 r = requests.get(url, params=params, timeout=10)
                 resp = r.json()
                 
+                # --- FIX: CHECK FOR TOP-LEVEL API ERRORS ---
+                # If resp is {'code': 429, ...}, we must stop here.
+                if 'code' in resp and isinstance(resp['code'], int) and resp['code'] >= 400:
+                    print(f"⚠️ API Error (Skipping Batch): {resp.get('message')}")
+                    continue
+
+                # Normalize response if single asset
                 if len(chunk) == 1: resp = {chunk[0]: resp}
 
                 for sym, data in resp.items():
-                    if 'values' in data:
+                    # Check if data is a dictionary (valid) or something else
+                    if isinstance(data, dict) and 'values' in data:
                         clean_values = []
                         for d in data['values']:
                              vol = d.get('volume')
@@ -68,8 +75,9 @@ def update_market_data():
                         
                         save_to_db(sym, '1min', clean_values)
                         resample_and_save(sym)
-                    elif 'code' in data and data['code'] == 429:
-                        print(f"⚠️ Daemon Rate Limit Hit: {data['message']}")
+                    
+                    elif isinstance(data, dict) and 'code' in data:
+                         print(f"⚠️ Error for symbol {sym}: {data.get('message')}")
 
             except Exception as e:
                 print(f"❌ Daemon Batch Failed: {e}")
