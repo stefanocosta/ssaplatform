@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, User as UserIcon, Lock, Mail, ChevronRight } from 'lucide-react';
+import { LogOut, User as UserIcon, Lock, Mail, ChevronRight, Clock as ClockIcon } from 'lucide-react';
 
 // ================================================================== //
-// CLOCK COMPONENT (Updated with Day Number)
+// CLOCK COMPONENT 
 // ================================================================== //
 const Clock = () => {
   const [time, setTime] = useState(new Date());
@@ -15,12 +15,10 @@ const Clock = () => {
   const formatTime = (date) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const d = days[date.getDay()];
-    const dayNum = date.getDate(); // Returns day of month (e.g., 15)
+    const dayNum = date.getDate(); 
     const h = String(date.getHours()).padStart(2, '0');
     const m = String(date.getMinutes()).padStart(2, '0');
     const s = String(date.getSeconds()).padStart(2, '0');
-    
-    // Format: "Tue 15, 10:39:59"
     return `${d} ${dayNum}, ${h}:${m}:${s}`;
   };
 
@@ -28,7 +26,7 @@ const Clock = () => {
     <div style={{ 
       fontFamily: 'monospace', 
       fontSize: '16px', 
-      color: '#00bcd4', // Cyan to match the theme
+      color: '#00bcd4', 
       fontWeight: 'bold',
       letterSpacing: '1px'
     }}>
@@ -49,7 +47,7 @@ const AuthInput = ({ type, placeholder, value, onChange, Icon, onKeyDown }) => (
       value={value}
       onChange={onChange}
       className="w-full pl-10 pr-4 py-3 text-white bg-gray-700 border border-gray-600 rounded-lg focus:ring-teal-500 focus:border-teal-500 outline-none transition duration-150"
-      onKeyDown={onKeyDown} // Handle 'Enter' key press via prop
+      onKeyDown={onKeyDown} 
     />
   </div>
 );
@@ -58,28 +56,29 @@ const AuthInput = ({ type, placeholder, value, onChange, Icon, onKeyDown }) => (
 // MAIN AUTH FORM COMPONENT
 // ================================================================== //
 const AuthForm = ({ children }) => {
-  // Check for JWT token on component mount
   const initialToken = localStorage.getItem('access_token');
   const initialUsername = localStorage.getItem('username');
   
+  // Retrieve saved payment/trial status
+  const initialPaymentStatus = localStorage.getItem('payment_status') || 'trial';
+  const initialDaysLeft = localStorage.getItem('days_left') || '14';
+
   const [isAuthenticated, setIsAuthenticated] = useState(!!initialToken);
   const [user, setUser] = useState(initialUsername || 'Guest');
-  const [isLoginView, setIsLoginView] = useState(true); // true for Login, false for Register
+  const [paymentStatus, setPaymentStatus] = useState(initialPaymentStatus);
+  const [daysLeft, setDaysLeft] = useState(initialDaysLeft);
+
+  const [isLoginView, setIsLoginView] = useState(true); 
   const [usernameInput, setUsernameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // NOTE: This URL should match the running Flask server's address
   const API_BASE_URL = '/api'; 
 
-  // Function to handle both Login and Registration submission
   const handleSubmit = async (e) => {
-    // Prevent default form submission or handle synthetic event if called from onKeyDown
-    if (e) {
-      e.preventDefault();
-    }
+    if (e) e.preventDefault();
     
     setError('');
     setIsLoading(true);
@@ -100,27 +99,29 @@ const AuthForm = ({ children }) => {
 
         if (response.ok) {
             if (isLoginView) {
-                // Successful login: Store token and grant access
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('username', data.username);
+                
+                // SAVE TRIAL DATA
+                localStorage.setItem('payment_status', data.payment_status);
+                localStorage.setItem('days_left', data.days_left);
+                setPaymentStatus(data.payment_status);
+                setDaysLeft(data.days_left);
+
                 setIsAuthenticated(true);
                 setUser(data.username);
-                // Clear inputs
                 setUsernameInput('');
                 setPasswordInput('');
             } else {
-                // Successful registration: Switch to login view
                 alert('Registration successful! Please log in with your new account.'); 
                 setIsLoginView(true);
-                // Pre-fill username for convenience
                 setUsernameInput(usernameInput); 
                 setEmailInput('');
                 setPasswordInput('');
             }
         } else {
-            // Error handling
             setError(data.msg || `Server error during ${endpoint}.`);
-            setPasswordInput(''); // Clear password on error
+            setPasswordInput(''); 
         }
     } catch (err) {
         console.error("Authentication error:", err);
@@ -133,6 +134,8 @@ const AuthForm = ({ children }) => {
   const handleLogout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('username');
+    localStorage.removeItem('payment_status');
+    localStorage.removeItem('days_left');
     setIsAuthenticated(false);
     setUser('Guest');
   };
@@ -145,15 +148,10 @@ const AuthForm = ({ children }) => {
     setPasswordInput('');
   };
   
-  // Create a reusable key down handler to trigger submission on Enter key press
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      handleSubmit(); // Call handleSubmit without the full event object
-    }
+    if (e.key === 'Enter') handleSubmit();
   };
   
-
-  // If authenticated, render the main application content
   if (isAuthenticated) {
     return (
       <div 
@@ -162,42 +160,55 @@ const AuthForm = ({ children }) => {
             height: '100dvh', 
             display: 'flex', 
             flexDirection: 'column', 
-            backgroundColor: '#1a1a1a' // Match global background
+            backgroundColor: '#1a1a1a' 
         }}
       >
-        {/* NEW COMBINED HEADER */}
+        {/* HEADER */}
         <div 
           style={{ 
             backgroundColor: '#2d2d2d', 
             padding: '5px 15px', 
             display: 'flex', 
-            justifyContent: 'space-between', // Align title left, clock center, user info right
+            justifyContent: 'space-between', 
             alignItems: 'center',
             color: '#d1d4dc',
             flexShrink: 0, 
             boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
-            height: '50px' // ADDED FIXED HEIGHT
+            height: '50px' 
           }}
         >
-          {/* 1. App Title */}
-          <h1 style={{ 
-             color: '#d1d4dc', 
-             fontSize: '1.2rem',
-             margin: 0 
-           }}>
-           SSA Trading Platform 2.0
+          <h1 style={{ color: '#d1d4dc', fontSize: '1.2rem', margin: 0 }}>
+           SSA Platform 2.1
           </h1>
 
-          {/* 2. CLOCK INSERTED HERE */}
+          {/* --- TRIAL COUNTDOWN BADGE --- */}
+          {paymentStatus !== 'active' && (
+             <div style={{
+                 display: 'flex', 
+                 alignItems: 'center',
+                 fontSize: '13px',
+                 fontWeight: 'bold',
+                 color: parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00', // Red if <= 3 days, else Orange
+                 border: `1px solid ${parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00'}`,
+                 padding: '2px 8px',
+                 borderRadius: '4px',
+                 marginLeft: 'auto',
+                 marginRight: '20px'
+             }}>
+                 <ClockIcon size={14} style={{marginRight: '5px'}}/>
+                 Trial: {daysLeft} Days Left
+             </div>
+          )}
+
           <Clock />
 
-          {/* 3. User Info Badge and Logout */}
           <div 
             className="flex items-center gap-2"
             style={{ 
                 background: '#444', 
                 padding: '3px 8px', 
-                borderRadius: '8px' 
+                borderRadius: '8px',
+                marginLeft: '15px'
             }}
           >
             <span className="text-sm font-medium" style={{color:'white'}}>
@@ -214,8 +225,6 @@ const AuthForm = ({ children }) => {
           </div>
         </div>
         
-        {/* Render the rest of the application content below the header */}
-        {/* This div allows the rest of the App.js content to scroll if needed */}
         <div style={{ flexGrow: 1 }}>
             {children}
         </div>
@@ -223,29 +232,19 @@ const AuthForm = ({ children }) => {
     );
   }
 
-  // Otherwise, show the authentication prompt (remains the same)
   return (
     <div className="fixed inset-0 bg-gray-900 flex justify-center items-center z-[100]">
       <div className="bg-gray-800 p-8 rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm w-full border border-gray-700">
         
-        {/* FIX 1: Added inline style to guarantee text color is white/visible immediately */}
-        <h2 
-          className="text-3xl font-bold text-white text-center mb-2"
-          style={{ color: 'white' }}
-        >
+        <h2 className="text-3xl font-bold text-white text-center mb-2" style={{ color: 'white' }}>
           {isLoginView ? 'Welcome Back' : 'Join Platform'}
         </h2>
         
-        {/* FIX 2: Added inline style to guarantee subheading text is light/visible immediately */}
-        <p 
-          className="text-gray-400 text-center mb-8 text-sm"
-          style={{ color: '#ccc' }}
-        >
+        <p className="text-gray-400 text-center mb-8 text-sm" style={{ color: '#ccc' }}>
           {isLoginView ? 'Sign in to access the SSA Trading Platform' : 'Create your secure account'}
         </p>
 
         <form onSubmit={handleSubmit}>
-          
           <AuthInput
             type="text"
             placeholder="Username"
@@ -276,9 +275,18 @@ const AuthForm = ({ children }) => {
           />
 
           {error && (
-            <p className="text-red-400 text-sm text-center mb-4" style={{color:'red'}}>
+            <div style={{
+                color: '#ff5252', 
+                fontSize: '13px', 
+                textAlign: 'center', 
+                marginBottom: '15px', 
+                background: 'rgba(255, 0, 0, 0.1)', 
+                padding: '10px', 
+                borderRadius: '5px',
+                border: '1px solid #ff5252'
+            }}>
               {error}
-            </p>
+            </div>
           )}
 
           <button

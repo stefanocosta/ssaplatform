@@ -40,7 +40,7 @@ const TradingChart = ({
     const [showSignals, setShowSignals] = useState(true);
     const [countdown, setCountdown] = useState(60);
     const countdownIntervalRef = useRef(null);
-    const [internalChartType, setInternalChartType] = useState('line');
+    const [internalChartType, setInternalChartType] = useState('candle');
 
     // ================================================================== //
     // ORIGINAL HELPERS (100% restored)

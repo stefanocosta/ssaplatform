@@ -1,23 +1,36 @@
-import React from 'react';
-import { Link } from 'react-router-dom'; // Assuming you use react-router-dom
-import './LandingPage.css'; // We will create this next
+import React, { useState } from 'react'; // Added useState
+import { Link } from 'react-router-dom';
+import './LandingPage.css';
+import ManualModal from './ManualModal'; // Import the new component
 
 const LandingPage = () => {
+    // State to control Modal visibility
+    const [showManual, setShowManual] = useState(false);
+
     return (
         <div className="landing-container">
+            {/* --- Render Modal if state is true --- */}
+            {showManual && <ManualModal onClose={() => setShowManual(false)} />}
+
             {/* --- Navigation Bar --- */}
             <nav className="landing-nav">
                 <div className="nav-logo">SSA Trading Platform</div>
                 <div className="nav-links">
-                    {/* Placeholders for future pages */}
-                    <span className="nav-item disabled">Manual (Coming Soon)</span>
+                    {/* UPDATED: Manual button now works */}
+                    <button 
+                        className="nav-item btn-text" 
+                        onClick={() => setShowManual(true)}
+                    >
+                        Manual
+                    </button>
+                    
                     <span className="nav-item disabled">FAQs (Coming Soon)</span>
-                    {/* The main Call to Action button */}
+                    
                     <Link to="/auth" className="nav-btn-cta">Login / Register</Link>
                 </div>
             </nav>
 
-            {/* --- Hero Section (Main Banner) --- */}
+            {/* ... Rest of your Hero, Features, Footer remains exactly the same ... */}
             <header className="hero-section">
                 <div className="hero-overlay"></div>
                 <div className="hero-content">
@@ -30,7 +43,6 @@ const LandingPage = () => {
                 </div>
             </header>
 
-            {/* --- Features Section --- */}
             <section className="features-section">
                 <div className="feature-card">
                     <h2>Mathematical "Hotspots"</h2>
@@ -46,7 +58,6 @@ const LandingPage = () => {
                 </div>
             </section>
 
-            {/* --- Footer & Disclaimer --- */}
             <footer className="landing-footer">
                 <div className="disclaimer-area">
                     <strong>Risk Disclosure & Disclaimer:</strong>
