@@ -1,64 +1,71 @@
-import time
-import signal
 import sys
 import logging
+import signal
 from datetime import datetime
-from app import create_app
-from flask_apscheduler import APScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
+from app import create_app
 from app.tasks import update_market_data
 
-# 1. Setup Logging (Unbuffered)
+# 1. Setup Logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stdout
 )
-logger = logging.getLogger('ssa_scheduler')
+logger = logging.getLogger('ssa_daemon')
+
+# 2. Define the Wrapper
+# We wrap the task to inject the App Context explicitly.
+# This avoids the "Global App" issues in tasks.py.
+def job_wrapper():
+    app = create_app()
+    with app.app_context():
+        try:
+            update_market_data()
+        except Exception as e:
+            logger.error(f"❌ Critical Task Error: {e}")
 
 def run_scheduler():
-    app = create_app()
-    scheduler = APScheduler()
-    scheduler.init_app(app)
+    # Initialize the BlockingScheduler (Runs in the foreground)
+    scheduler = BlockingScheduler()
 
-    # 2. Add Event Listener (To see success/failure logs)
+    # 3. Add Event Listener
     def job_listener(event):
         if event.exception:
-            logger.error(f"❌ Job '{event.job_id}' FAILED: {event.exception}")
+            logger.error(f"❌ Job FAILED: {event.exception}")
         else:
-            logger.info(f"✅ Job '{event.job_id}' completed successfully.")
+            logger.info(f"✅ Job completed successfully.")
 
-    scheduler.scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
+    scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
-    # 3. FIX: Add Job BEFORE Starting
-    # This ensures the scheduler picks it up immediately upon start.
+    # 4. Schedule the Job
+    # misfire_grace_time=None: "If you miss the start time, run it anyway!"
     scheduler.add_job(
-        id='market_update_job', 
-        func=update_market_data, 
-        trigger='cron', 
+        func=job_wrapper,
+        trigger='cron',
         second='0',
+        id='market_update_job',
         replace_existing=True,
-        next_run_time=datetime.now() # <--- FORCE RUN IMMEDIATELY
+        misfire_grace_time=None, 
+        next_run_time=datetime.now() # <--- FORCE IMMEDIATE RUN
     )
-    logger.info("📝 Job added to queue (Waiting for start)...")
 
-    # 4. Start Scheduler
-    scheduler.start()
-    logger.info("🚀 Scheduler Started! (Job should run immediately)")
+    logger.info("🚀 PURE Scheduler Started (Blocking Mode)...")
 
-    # Signal Handling
+    # 5. Handle Shutdown Signals
     def signal_handler(sig, frame):
-        logger.info('🛑 Stop signal received. Exiting...')
+        logger.info('🛑 Shutting down...')
+        scheduler.shutdown(wait=False)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Heartbeat loop
+    # Start (This blocks the thread, so no while True loop needed)
     try:
-        while True:
-            time.sleep(1)
+        scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         pass
 
