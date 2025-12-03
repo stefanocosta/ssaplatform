@@ -1,10 +1,12 @@
 import requests
 import calendar
 import time
+import pandas as pd # <--- Added pandas import
 from datetime import datetime, timedelta
 from app import db
 from app.models import MarketData
 
+# --- DEFINE YOUR ASSETS HERE ---
 TRACKED_ASSETS = ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'DOGE/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD',
     'EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY',
     'AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
@@ -30,15 +32,10 @@ def get_historical_data(symbol, interval, api_key, limit=300):
         return fetch_from_api(symbol, interval, api_key, limit, source="Custom")
 
     # 1. Fetch Main History from DB
-    # Note: We fetch more than 'limit' to handle synthetic building if needed
     data_query = MarketData.query.filter_by(
         symbol=symbol, 
         interval=interval
     ).order_by(MarketData.time.asc()).all()
-
-    # Special Case: If requesting Aggregate (e.g. 1h) but DB is empty/stale,
-    # we might need to check the 1min source data health too. 
-    # But simpler strategy: Check the requested interval first.
 
     db_data = []
     if len(data_query) >= 1: 
@@ -47,32 +44,38 @@ def get_historical_data(symbol, interval, api_key, limit=300):
     data_map = {d['time']: d for d in db_data}
 
     # =========================================================
-    # UNIVERSAL GAP HEALER & HOT UPDATE
+    # UNIVERSAL GAP HEALER
     # =========================================================
     if db_data:
         last_db_timestamp = data_query[-1].time
         time_diff = (datetime.utcnow() - last_db_timestamp).total_seconds()
         
-        # --- 1. GAP REPAIR (Any Interval) ---
-        # If DB data is older than 5 minutes (300s), something is wrong.
-        # We trigger a repair of the SOURCE (1min data) because that feeds everything.
+        # --- 1. GAP DETECTED (> 5 mins) ---
         if time_diff > 300:
-            # We fetch 1min data to fill the gap
-            # missing_minutes = int(time_diff / 60)
-            # fetch_size = min(max(500, missing_minutes + 60), 4800)
-            
-            # Simplified: Just fetch last 500 1-min candles to patch the recent hole
-            # This repairs the underlying data source for all synthetic charts.
+            # Fetch 1000 candles to patch the hole
             repair_candles = fetch_from_api(symbol, '1min', api_key, outputsize=1000, source="Universal GapRepair")
+            
             if repair_candles:
+                # 1. Save 1min data (Fixes 1min chart)
                 save_to_db(symbol, '1min', repair_candles)
                 
-                # If the user asked for 1min, update map directly
+                # 2. Update the in-memory map if user asked for 1min
                 if interval == '1min':
                     for c in repair_candles: data_map[c['time']] = c
-        
-        # --- 2. SYNTHETIC GENERATION ---
-        # Now that 1min source is potentially repaired, generate the requested tip
+                
+                # 3. CRITICAL FIX: REPAIR AGGREGATES
+                # We must recalculate 5m/15m/1h history using this new data
+                repair_aggregates(symbol)
+                
+                # 4. If user asked for aggregate (e.g. 1h), we must reload DB data
+                # because repair_aggregates just saved new 1h candles to DB
+                if interval != '1min':
+                    # Quick reload of just the new data
+                    new_agg_query = MarketData.query.filter_by(symbol=symbol, interval=interval).order_by(MarketData.time.asc()).all()
+                    db_data = [row.to_dict() for row in new_agg_query]
+                    data_map = {d['time']: d for d in db_data}
+
+        # --- 2. SYNTHETIC TIP GENERATION ---
         if interval in ['5min', '15min', '30min', '1h', '4h', '1day', '1week']:
             synthetic_candle = generate_synthetic_tip(symbol, interval)
             if synthetic_candle:
@@ -87,7 +90,6 @@ def get_historical_data(symbol, interval, api_key, limit=300):
             if (current_time - last_fetch > COOLDOWN_1MIN) and (time_diff > 10):
                 latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source="HotFetch 1m")
                 FETCH_COOLDOWN[cache_key] = time.time()
-                
                 if latest_candles:
                     for candle in latest_candles:
                         data_map[candle['time']] = candle
@@ -96,21 +98,68 @@ def get_historical_data(symbol, interval, api_key, limit=300):
     final_data = sorted(data_map.values(), key=lambda x: x['time'])
 
     if not final_data:
-        # Initial Backfill
-        # If DB is empty, we fetch the requested interval directly (for Seed speed)
-        # OR we could fetch 1min and synthesize. 
-        # Direct fetch is safer for "First Load".
         api_data = fetch_from_api(symbol, interval, api_key, outputsize=limit+50, source="Backfill")
         if api_data:
             save_to_db(symbol, interval, api_data)
+            # Initial seed needs aggregate repair too
+            repair_aggregates(symbol) 
             return api_data 
         return []
 
     return final_data[-limit:]
 
+def repair_aggregates(symbol):
+    """
+    Recalculates 5m, 15m, 30m, 1h history from the last 24h of 1min data.
+    This fixes gaps in higher timeframes after a GapRepair.
+    """
+    try:
+        # Load last 24 hours of 1-min data
+        since = datetime.utcnow() - timedelta(hours=24)
+        stmt = db.select(MarketData).filter(
+            MarketData.symbol == symbol,
+            MarketData.interval == '1min',
+            MarketData.time >= since
+        ).order_by(MarketData.time.asc())
+
+        results = db.session.execute(stmt).scalars().all()
+        if not results: return
+
+        data_list = [{
+            'time': r.time,
+            'open': r.open,
+            'high': r.high,
+            'low': r.low,
+            'close': r.close,
+            'volume': r.volume
+        } for r in results]
+
+        df = pd.DataFrame(data_list)
+        df.set_index('time', inplace=True)
+
+        aggregations = {'5min': '5min', '15min': '15min', '30min': '30min', '1h': '1h'}
+
+        for interval_name, pandas_rule in aggregations.items():
+            ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+            resampled = df.resample(pandas_rule).agg(ohlc_dict).dropna()
+            
+            to_save = []
+            for time_idx, row in resampled.iterrows():
+                 to_save.append({
+                    "datetime_obj": time_idx, # Naive UTC from Pandas
+                    "open": float(row['open']),
+                    "high": float(row['high']),
+                    "low": float(row['low']),
+                    "close": float(row['close']),
+                    "volume": float(row['volume'])
+                })
+            save_to_db(symbol, interval_name, to_save)
+    except Exception as e:
+        print(f"Aggregate Repair Failed: {e}")
+
 def generate_synthetic_tip(symbol, interval):
-    # (Same function as before - no changes needed here)
     now = datetime.utcnow()
+    
     if interval == '5min':
         minute_block = (now.minute // 5) * 5
         start_time = now.replace(minute=minute_block, second=0, microsecond=0)
