@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, User as UserIcon, Lock, Mail, ChevronRight, Clock as ClockIcon } from 'lucide-react';
+// Added BookOpen icon for the manual button
+import { LogOut, User as UserIcon, Lock, Mail, ChevronRight, Clock as ClockIcon, BookOpen } from 'lucide-react';
+import ManualModal from './ManualModal'; // Import the manual component
 
 // ================================================================== //
 // CLOCK COMPONENT 
@@ -59,7 +61,6 @@ const AuthForm = ({ children }) => {
   const initialToken = localStorage.getItem('access_token');
   const initialUsername = localStorage.getItem('username');
   
-  // Retrieve saved payment/trial status
   const initialPaymentStatus = localStorage.getItem('payment_status') || 'trial';
   const initialDaysLeft = localStorage.getItem('days_left') || '14';
 
@@ -67,6 +68,9 @@ const AuthForm = ({ children }) => {
   const [user, setUser] = useState(initialUsername || 'Guest');
   const [paymentStatus, setPaymentStatus] = useState(initialPaymentStatus);
   const [daysLeft, setDaysLeft] = useState(initialDaysLeft);
+
+  // --- NEW STATE FOR MANUAL MODAL ---
+  const [showManual, setShowManual] = useState(false);
 
   const [isLoginView, setIsLoginView] = useState(true); 
   const [usernameInput, setUsernameInput] = useState('');
@@ -79,7 +83,6 @@ const AuthForm = ({ children }) => {
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
-    
     setError('');
     setIsLoading(true);
 
@@ -101,8 +104,6 @@ const AuthForm = ({ children }) => {
             if (isLoginView) {
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('username', data.username);
-                
-                // SAVE TRIAL DATA
                 localStorage.setItem('payment_status', data.payment_status);
                 localStorage.setItem('days_left', data.days_left);
                 setPaymentStatus(data.payment_status);
@@ -115,8 +116,6 @@ const AuthForm = ({ children }) => {
             } else {
                 alert('Registration successful! Please log in with your new account.'); 
                 setIsLoginView(true);
-                setUsernameInput(usernameInput); 
-                setEmailInput('');
                 setPasswordInput('');
             }
         } else {
@@ -152,6 +151,7 @@ const AuthForm = ({ children }) => {
     if (e.key === 'Enter') handleSubmit();
   };
   
+  // --- RENDER FOR AUTHENTICATED USERS ---
   if (isAuthenticated) {
     return (
       <div 
@@ -163,6 +163,9 @@ const AuthForm = ({ children }) => {
             backgroundColor: '#1a1a1a' 
         }}
       >
+        {/* --- RENDER MANUAL MODAL IF ACTIVE --- */}
+        {showManual && <ManualModal onClose={() => setShowManual(false)} />}
+
         {/* HEADER */}
         <div 
           style={{ 
@@ -177,18 +180,44 @@ const AuthForm = ({ children }) => {
             height: '50px' 
           }}
         >
-          <h1 style={{ color: '#d1d4dc', fontSize: '1.2rem', margin: 0 }}>
-           SSA Platform 2.1
-          </h1>
+          {/* Title and Manual Button Container */}
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <h1 style={{ color: '#d1d4dc', fontSize: '1.2rem', margin: 0, marginRight: '15px' }}>
+            SSA Platform 2.1
+            </h1>
+            
+            {/* --- NEW MANUAL BUTTON --- */}
+            <button
+                onClick={() => setShowManual(true)}
+                style={{
+                    background: 'none',
+                    border: '1px solid #555',
+                    borderRadius: '4px',
+                    color: '#d1d4dc',
+                    padding: '4px 8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '0.9rem',
+                    transition: 'background 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#444'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                title="Open User Manual"
+            >
+                <BookOpen size={16} style={{ marginRight: '5px' }}/>
+                Manual
+            </button>
+          </div>
 
-          {/* --- TRIAL COUNTDOWN BADGE --- */}
+          {/* TRIAL COUNTDOWN BADGE */}
           {paymentStatus !== 'active' && (
              <div style={{
                  display: 'flex', 
                  alignItems: 'center',
                  fontSize: '13px',
                  fontWeight: 'bold',
-                 color: parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00', // Red if <= 3 days, else Orange
+                 color: parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00',
                  border: `1px solid ${parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00'}`,
                  padding: '2px 8px',
                  borderRadius: '4px',
@@ -202,6 +231,7 @@ const AuthForm = ({ children }) => {
 
           <Clock />
 
+          {/* User Profile & Logout */}
           <div 
             className="flex items-center gap-2"
             style={{ 
@@ -232,79 +262,34 @@ const AuthForm = ({ children }) => {
     );
   }
 
+  // --- RENDER FOR LOGIN/REGISTER VIEW (Unchanged) ---
   return (
     <div className="fixed inset-0 bg-gray-900 flex justify-center items-center z-[100]">
       <div className="bg-gray-800 p-8 rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.5)] max-w-sm w-full border border-gray-700">
-        
         <h2 className="text-3xl font-bold text-white text-center mb-2" style={{ color: 'white' }}>
           {isLoginView ? 'Welcome Back' : 'Join Platform'}
         </h2>
-        
         <p className="text-gray-400 text-center mb-8 text-sm" style={{ color: '#ccc' }}>
           {isLoginView ? 'Sign in to access the SSA Trading Platform' : 'Create your secure account'}
         </p>
 
         <form onSubmit={handleSubmit}>
-          <AuthInput
-            type="text"
-            placeholder="Username"
-            value={usernameInput}
-            onChange={(e) => setUsernameInput(e.target.value)}
-            Icon={UserIcon}
-            onKeyDown={handleKeyDown} 
-          />
-
-          {!isLoginView && (
-            <AuthInput
-              type="email"
-              placeholder="Email"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              Icon={Mail}
-              onKeyDown={handleKeyDown} 
-            />
-          )}
-
-          <AuthInput
-            type="password"
-            placeholder="Password"
-            value={passwordInput}
-            onChange={(e) => setPasswordInput(e.target.value)}
-            Icon={Lock}
-            onKeyDown={handleKeyDown} 
-          />
+          <AuthInput type="text" placeholder="Username" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} Icon={UserIcon} onKeyDown={handleKeyDown} />
+          {!isLoginView && ( <AuthInput type="email" placeholder="Email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} Icon={Mail} onKeyDown={handleKeyDown} /> )}
+          <AuthInput type="password" placeholder="Password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} Icon={Lock} onKeyDown={handleKeyDown} />
 
           {error && (
-            <div style={{
-                color: '#ff5252', 
-                fontSize: '13px', 
-                textAlign: 'center', 
-                marginBottom: '15px', 
-                background: 'rgba(255, 0, 0, 0.1)', 
-                padding: '10px', 
-                borderRadius: '5px',
-                border: '1px solid #ff5252'
-            }}>
+            <div style={{ color: '#ff5252', fontSize: '13px', textAlign: 'center', marginBottom: '15px', background: 'rgba(255, 0, 0, 0.1)', padding: '10px', borderRadius: '5px', border: '1px solid #ff5252' }}>
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className={`w-full py-3 text-lg font-semibold rounded-lg transition duration-200 shadow-lg 
-              ${isLoading ? 'bg-teal-700/50 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-500 text-white'}`}
-          >
-            {isLoading 
-              ? <svg className="animate-spin h-5 w-5 mr-3 text-white inline" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-              : (isLoginView ? 'Login' : 'Register Account')}
+          <button type="submit" disabled={isLoading} className={`w-full py-3 text-lg font-semibold rounded-lg transition duration-200 shadow-lg ${isLoading ? 'bg-teal-700/50 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-500 text-white'}`}>
+            {isLoading ? 'Loading...' : (isLoginView ? 'Login' : 'Register Account')}
           </button>
         </form>
         
-        <button 
-          onClick={handleSwitchView}
-          className="w-full mt-4 text-sm text-teal-400 hover:text-teal-300 transition-colors flex items-center justify-center"
-        >
+        <button onClick={handleSwitchView} className="w-full mt-4 text-sm text-teal-400 hover:text-teal-300 transition-colors flex items-center justify-center">
           {isLoginView ? 'Need an account?' : 'Already registered?'} 
           <span className="font-semibold ml-1">{isLoginView ? 'Register' : 'Login'}</span>
           <ChevronRight className="w-4 h-4 ml-1" />

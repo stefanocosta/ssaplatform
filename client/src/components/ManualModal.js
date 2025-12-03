@@ -1,8 +1,12 @@
 import React from 'react';
-import './LandingPage.css'; // We share styles for consistency
+// We don't need a specific CSS file here as it inherits from parent pages, 
+// but inline styles ensure specific colors render correctly.
 
 const ManualModal = ({ onClose }) => {
     return (
+        /* NOTE: The CSS classes 'modal-overlay', 'modal-content', etc., 
+           must exist in LandingPage.css (which is loaded globally or by the parent).
+        */
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <button className="modal-close-btn" onClick={onClose}>&times;</button>
@@ -19,6 +23,7 @@ const ManualModal = ({ onClose }) => {
                             Unlike traditional Moving Averages which lag behind price, our <strong>SSA Trend Line</strong> is mathematically derived to offer zero-lag tracking of the dominant market direction.
                         </p>
                         <ul>
+                            {/* Explicit colors added here */}
                             <li><strong style={{color: '#00c853'}}>Green Trend:</strong> The underlying market structure is Bullish (Rising).</li>
                             <li><strong style={{color: '#ff3d00'}}>Red Trend:</strong> The underlying market structure is Bearish (Falling).</li>
                         </ul>
@@ -33,8 +38,9 @@ const ManualModal = ({ onClose }) => {
                             <strong>Visualizing the Data:</strong> The dotted line on the main chart is the Cycle superimposed on the Trend. The bottom panel shows the <em>same</em> Cycle but "Detrended" (flattened against a zero line). The Zero Line in the bottom panel represents the Trend itself.
                         </p>
                         <ul>
-                            <li><strong>Below Zero (Green/Lime):</strong> Price is below the Trend (Potential value area).</li>
-                            <li><strong>Above Zero (Red/Orange):</strong> Price is above the Trend (Potential overextended area).</li>
+                            {/* --- CSS FIX HERE: Added inline colors --- */}
+                            <li><strong>Below Zero (<span style={{color: '#00c853'}}>Green</span>/<span style={{color: '#b2ff59'}}>Lime</span>):</strong> Price is below the Trend (Potential value area).</li>
+                            <li><strong>Above Zero (<span style={{color: '#ff3d00'}}>Red</span>/<span style={{color: '#ffab00'}}>Orange</span>):</strong> Price is above the Trend (Potential overextended area).</li>
                         </ul>
                     </section>
 
@@ -48,8 +54,8 @@ const ManualModal = ({ onClose }) => {
                                 <h4>Buying Zones (Oversold)</h4>
                                 <ul>
                                     <li><strong>Condition:</strong> Price &lt; Cyclic &lt; Trend.</li>
-                                    <li><strong>Green Hotspot:</strong> Strong buy zone in a rising trend.</li>
-                                    <li><strong>Lime Hotspot:</strong> Counter-trend buy zone.</li>
+                                    <li><strong style={{color: '#00c853'}}>Green Hotspot:</strong> Strong buy zone in a rising trend.</li>
+                                    <li><strong style={{color: '#b2ff59'}}>Lime Hotspot:</strong> Counter-trend buy zone.</li>
                                 </ul>
                             </div>
                             <div>
@@ -57,7 +63,7 @@ const ManualModal = ({ onClose }) => {
                                 <ul>
                                     <li><strong>Condition:</strong> Price &gt; Cyclic &gt; Trend.</li>
                                     <li><strong style={{color: '#ff3d00'}}>Red Hotspot:</strong> Trend is Falling. High probability Short entry.</li>
-                                    <li><strong style={{color: 'orange'}}>Orange Hotspot:</strong> Trend is Rising. Indicates "Take Profit" rather than a direct Short.</li>
+                                    <li><strong style={{color: '#ffab00'}}>Orange Hotspot:</strong> Trend is Rising. Indicates "Take Profit" rather than a direct Short.</li>
                                 </ul>
                             </div>
                         </div>
