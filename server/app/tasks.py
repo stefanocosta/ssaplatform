@@ -4,12 +4,16 @@ import calendar
 from datetime import datetime
 from app import db, create_app
 from app.models import MarketData
-# Import the tracker
 from app.services.data_manager import save_to_db, TRACKED_ASSETS, track_api_call
 
 app = create_app()
 
 def update_market_data():
+    """
+    1. Batch fetch 1min data.
+    2. Save 1min data.
+    3. Aggregate to higher timeframes.
+    """
     with app.app_context():
         api_key = app.config['TWELVE_DATA_API_KEY']
         if not api_key: return
@@ -20,7 +24,6 @@ def update_market_data():
         for chunk in asset_chunks:
             symbols_str = ",".join(chunk)
             
-            # TRACK THE CALL
             track_api_call(f"Daemon Batch ({len(chunk)} assets)")
 
             url = "https://api.twelvedata.com/time_series"
@@ -32,8 +35,11 @@ def update_market_data():
             }
             
             try:
-                r = requests.get(url, params=params)
+                # --- FIX: ADD TIMEOUT (10 seconds) ---
+                # Prevents the daemon from hanging forever if the network stalls
+                r = requests.get(url, params=params, timeout=10)
                 resp = r.json()
+                
                 if len(chunk) == 1: resp = {chunk[0]: resp}
 
                 for sym, data in resp.items():

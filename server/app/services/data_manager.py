@@ -163,7 +163,7 @@ def fetch_from_api(symbol, interval, api_key, outputsize=500, source="API"):
         "order": "ASC"
     }
     try:
-        r = requests.get(url, params=params)
+        r = requests.get(url, params=params, timeout=10)
         data = r.json()
         if 'values' in data:
             clean_data = []
