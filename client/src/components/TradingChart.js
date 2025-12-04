@@ -561,7 +561,7 @@ const TradingChart = ({
             // --- LOGIC CHANGE HERE ---
             // We want to target 4 seconds AFTER the minute starts 
             // to allow the server time to fetch and save data.
-            const targetSecond = 4; 
+            const targetSecond = 10; 
             
             let secondsRemaining = targetSecond - currentSeconds;
             if (secondsRemaining <= 0) {
