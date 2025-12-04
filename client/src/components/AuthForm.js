@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-// Added BookOpen icon for the manual button
-import { LogOut, User as UserIcon, Lock, Mail, ChevronRight, Clock as ClockIcon, BookOpen } from 'lucide-react';
-import ManualModal from './ManualModal'; // Import the manual component
+// Added ChevronDown/Up for the collapsible menu
+import { LogOut, User as UserIcon, Lock, Mail, ChevronRight, Clock as ClockIcon, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import ManualModal from './ManualModal'; 
 
 // ================================================================== //
 // CLOCK COMPONENT 
@@ -69,8 +69,11 @@ const AuthForm = ({ children }) => {
   const [paymentStatus, setPaymentStatus] = useState(initialPaymentStatus);
   const [daysLeft, setDaysLeft] = useState(initialDaysLeft);
 
-  // --- NEW STATE FOR MANUAL MODAL ---
   const [showManual, setShowManual] = useState(false);
+  
+  // --- RESPONSIVE STATES ---
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isHeaderOpen, setIsHeaderOpen] = useState(false); // Controls the collapsible header
 
   const [isLoginView, setIsLoginView] = useState(true); 
   const [usernameInput, setUsernameInput] = useState('');
@@ -80,6 +83,12 @@ const AuthForm = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const API_BASE_URL = '/api'; 
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -163,96 +172,153 @@ const AuthForm = ({ children }) => {
             backgroundColor: '#1a1a1a' 
         }}
       >
-        {/* --- RENDER MANUAL MODAL IF ACTIVE --- */}
+        {/* MANUAL MODAL */}
         {showManual && <ManualModal onClose={() => setShowManual(false)} />}
 
-        {/* HEADER */}
+        {/* HEADER CONTAINER */}
         <div 
           style={{ 
             backgroundColor: '#2d2d2d', 
-            padding: '5px 15px', 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
             color: '#d1d4dc',
             flexShrink: 0, 
             boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
-            height: '50px' 
+            // Transition for smooth sliding on mobile
+            transition: 'all 0.3s ease-in-out',
+            overflow: 'hidden',
+            borderBottom: '1px solid #444'
           }}
         >
-          {/* Title and Manual Button Container */}
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <h1 style={{ color: '#d1d4dc', fontSize: '1.2rem', margin: 0, marginRight: '15px' }}>
-            SSA Platform 2.1
-            </h1>
-            
-            {/* --- NEW MANUAL BUTTON --- */}
-            <button
-                onClick={() => setShowManual(true)}
-                style={{
-                    background: 'none',
-                    border: '1px solid #555',
-                    borderRadius: '4px',
-                    color: '#d1d4dc',
-                    padding: '4px 8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '0.9rem',
-                    transition: 'background 0.2s'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.background = '#444'}
-                onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-                title="Open User Manual"
-            >
-                <BookOpen size={16} style={{ marginRight: '5px' }}/>
-                Manual
-            </button>
+          {/* PRIMARY BAR (Always Visible) */}
+          <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: isMobile ? '8px 10px' : '5px 15px',
+              height: isMobile ? '45px' : '50px'
+          }}>
+             {/* LEFT: Title */}
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+                <h1 style={{ color: '#d1d4dc', fontSize: isMobile ? '1.1rem' : '1.2rem', margin: 0, fontWeight: 'bold' }}>
+                    {isMobile ? 'SSA TP' : 'SSA Platform 2.2'}
+                </h1>
+
+                {/* Desktop: Manual Button next to title */}
+                {!isMobile && (
+                    <button
+                        onClick={() => setShowManual(true)}
+                        style={{
+                            background: 'none',
+                            border: '1px solid #555',
+                            borderRadius: '4px',
+                            color: '#d1d4dc',
+                            padding: '4px 8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            fontSize: '0.9rem',
+                            marginLeft: '15px'
+                        }}
+                    >
+                        <BookOpen size={16} style={{ marginRight: '5px' }}/>
+                        Manual
+                    </button>
+                )}
+            </div>
+
+            {/* CENTER: Clock (Desktop) or Trial (Mobile) */}
+            {isMobile ? (
+                 paymentStatus !== 'active' && (
+                    <div style={{
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        color: parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00',
+                        border: `1px solid ${parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00'}`,
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        margin: '0 10px'
+                    }}>
+                        {daysLeft}d Left
+                    </div>
+                 )
+            ) : (
+                <Clock />
+            )}
+
+            {/* RIGHT: Desktop Profile OR Mobile Toggle */}
+            {isMobile ? (
+                // --- MOBILE TOGGLE BUTTON ---
+                <button 
+                    onClick={() => setIsHeaderOpen(!isHeaderOpen)}
+                    style={{ background: 'none', border: 'none', color: '#d1d4dc', padding: '5px' }}
+                >
+                    {isHeaderOpen ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+                </button>
+            ) : (
+                // --- DESKTOP PROFILE ---
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    {paymentStatus !== 'active' && (
+                        <div style={{
+                            fontSize: '13px', fontWeight: 'bold',
+                            color: parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00',
+                            border: `1px solid ${parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00'}`,
+                            padding: '2px 8px', borderRadius: '4px',
+                        }}>
+                            Trial: {daysLeft} Days
+                        </div>
+                    )}
+                    <div className="flex items-center" style={{ background: '#444', padding: '3px 8px', borderRadius: '8px' }}>
+                        <span className="text-sm font-medium mr-2" style={{color:'white'}}>
+                            <UserIcon className="inline w-4 h-4 mr-1 text-teal-400" />
+                            {user}
+                        </span>
+                        <button onClick={handleLogout} className="p-1 text-gray-400 hover:text-red-400">
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+            )}
           </div>
 
-          {/* TRIAL COUNTDOWN BADGE */}
-          {paymentStatus !== 'active' && (
-             <div style={{
-                 display: 'flex', 
-                 alignItems: 'center',
-                 fontSize: '13px',
-                 fontWeight: 'bold',
-                 color: parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00',
-                 border: `1px solid ${parseInt(daysLeft) <= 3 ? '#ff5252' : '#ffab00'}`,
-                 padding: '2px 8px',
-                 borderRadius: '4px',
-                 marginLeft: 'auto',
-                 marginRight: '20px'
-             }}>
-                 <ClockIcon size={14} style={{marginRight: '5px'}}/>
-                 Trial: {daysLeft} Days Left
-             </div>
+          {/* SECONDARY BAR (Mobile Only - Collapsible) */}
+          {isMobile && isHeaderOpen && (
+              <div style={{ 
+                  padding: '10px', 
+                  backgroundColor: '#252525', 
+                  borderTop: '1px solid #333',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  animation: 'slideDown 0.2s ease-out'
+              }}>
+                  {/* Manual Button */}
+                  <button
+                    onClick={() => { setShowManual(true); setIsHeaderOpen(false); }}
+                    style={{
+                        background: '#333', border: 'none', borderRadius: '4px',
+                        color: '#d1d4dc', padding: '6px 12px', fontSize: '0.9rem',
+                        display: 'flex', alignItems: 'center'
+                    }}
+                  >
+                     <BookOpen size={16} style={{ marginRight: '5px' }}/>
+                     Manual
+                  </button>
+
+                  {/* User & Logout */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '0.9rem', color: '#aaa' }}>{user}</span>
+                      <button 
+                        onClick={handleLogout}
+                        style={{ 
+                            background: '#4a2222', color: '#ffaaaa', border: 'none',
+                            padding: '6px 12px', borderRadius: '4px', display: 'flex', alignItems: 'center'
+                        }}
+                      >
+                          <LogOut size={16} style={{ marginRight: '5px' }} />
+                          Logout
+                      </button>
+                  </div>
+              </div>
           )}
-
-          <Clock />
-
-          {/* User Profile & Logout */}
-          <div 
-            className="flex items-center gap-2"
-            style={{ 
-                background: '#444', 
-                padding: '3px 8px', 
-                borderRadius: '8px',
-                marginLeft: '15px'
-            }}
-          >
-            <span className="text-sm font-medium" style={{color:'white'}}>
-              <UserIcon className="inline w-4 h-4 mr-1 text-teal-400" />
-              {user}
-            </span>
-            <button 
-              onClick={handleLogout} 
-              className="p-1 text-gray-400 hover:text-red-400 transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
         </div>
         
         <div style={{ flexGrow: 1 }}>

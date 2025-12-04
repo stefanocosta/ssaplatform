@@ -10,12 +10,12 @@ from app.models import MarketData
 TRACKED_ASSETS = ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'DOGE/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD',
     'EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY',
     'AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
-
+#TRACKED_ASSETS = ['BTC/USD']
 _api_counter = 0
 _last_reset_time = time.time()
 
-# --- CONFIGURATION ---
-# We increase the cooldown to 55s because the daemon runs every 60s.
+# --- CONFIGURATION --- 
+# We increase the cooldown to55s because the daemon runs every 60s.
 # We don't want the web-workers fighting the daemon for the same data.
 COOLDOWN_1MIN = 55 
 FETCH_COOLDOWN = {}
