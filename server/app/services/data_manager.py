@@ -115,23 +115,38 @@ def get_historical_data(symbol, interval, api_key, limit=300):
         elif interval == '1min':
                     cache_key = f"{symbol}_{interval}"
                     current_time = time.time()
-                    last_fetch = FETCH_COOLDOWN.get(cache_key, 0)
+                    last_fetch_time = FETCH_COOLDOWN.get(cache_key, 0)
                     
-                    # --- FIX: INCREASE THRESHOLD TO 130 SECONDS ---
-                    # Rationale:
-                    # At 10:00:59, the latest available closed candle is 09:59:00.
-                    # The difference is 119 seconds. This is NORMAL.
-                    # We only want to panic if the difference is > 120s (Scheduler missed a beat).
-                    if (current_time - last_fetch > COOLDOWN_1MIN) and (time_diff > 130):
+                    # Tolerance is 130s (2 mins + buffer)
+                    if (current_time - last_fetch_time > COOLDOWN_1MIN) and (time_diff > 130):
                         
-                        track_api_call(f"HotFetch 1m {symbol} (Diff: {int(time_diff)}s > 130s)") # Added debug info
+                        track_api_call(f"HotFetch 1m {symbol} (Diff: {int(time_diff)}s)")
                         
+                        # Fetch the latest candle
                         latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source=f"HotFetch 1m {symbol}")
-                        FETCH_COOLDOWN[cache_key] = time.time()
-                        if latest_candles:
-                            for candle in latest_candles:
-                                data_map[candle['time']] = candle
-                            save_to_db(symbol, interval, latest_candles)
+                        
+                        # --- NEW LOGIC START ---
+                        backoff_penalty = 0
+                        
+                        if latest_candles and len(latest_candles) > 0:
+                            api_tip_time = latest_candles[-1]['time']
+                            db_tip_time = last_db_timestamp.replace(tzinfo=timezone.utc).timestamp() if last_db_timestamp.tzinfo else last_db_timestamp.timestamp()
+                            
+                            # If API gave us data that is OLDER or SAME as what we already had...
+                            if api_tip_time <= db_tip_time:
+                                print(f"⚠️ [SmartBackoff] API is lagging for {symbol}. Pausing HotFetch for 5 minutes.")
+                                # Set penalty to push the 'last_fetch' into the future
+                                # This tricks the check (current - last > 55) into failing for 5 minutes
+                                backoff_penalty = 300 # 5 minutes
+                            else:
+                                # We got new data! Save it.
+                                for candle in latest_candles:
+                                    data_map[candle['time']] = candle
+                                save_to_db(symbol, interval, latest_candles)
+                        
+                        # Update Cooldown (Current Time + Penalty)
+                        FETCH_COOLDOWN[cache_key] = time.time() + backoff_penalty
+                        # --- NEW LOGIC END ---
 
     final_data = sorted(data_map.values(), key=lambda x: x['time'])
 
