@@ -5,7 +5,8 @@ import {
     CandlestickSeries,
     LineSeries,
     HistogramSeries,
-    createSeriesMarkers
+    createSeriesMarkers,
+    PriceScaleMode
 } from 'lightweight-charts';
 import { getChartData } from '../services/api';
 
@@ -40,630 +41,302 @@ const TradingChart = ({
     const [showSignals, setShowSignals] = useState(true);
     const [countdown, setCountdown] = useState(60);
     const countdownIntervalRef = useRef(null);
+    
     const [internalChartType, setInternalChartType] = useState('candle');
+    // Removed isLogScale state - defaulting to Logarithmic always
 
     // ================================================================== //
-    // ORIGINAL HELPERS (100% restored)
+    // HELPERS (Unchanged)
     // ================================================================== //
     const intervalToMs = (interval) => {
-        const map = {
-            '1min': 60000, '5min': 300000, '15min': 900000, '30min': 1800000,
-            '1h': 3600000, '2h': 7200000, '4h': 14400000, '1day': 86400000,
-            '1week': 604800000, '1month': 2592000000
-        };
+        const map = { '1min': 60000, '5min': 300000, '15min': 900000, '30min': 1800000, '1h': 3600000, '2h': 7200000, '4h': 14400000, '1day': 86400000, '1week': 604800000, '1month': 2592000000 };
         return map[interval] || 86400000;
     };
-
-    const getCandleStartTime = (timestamp, intervalMs) => {
-        return Math.floor(timestamp / intervalMs) * intervalMs;
-    };
-
+    const getCandleStartTime = (timestamp, intervalMs) => Math.floor(timestamp / intervalMs) * intervalMs;
     const normalizeTimestamp = (time) => {
         if (typeof time === 'number') return time;
-        if (typeof time === 'string') {
-            const parsedTime = parseInt(time);
-            if (!isNaN(parsedTime)) {
-                return (parsedTime.toString().length === 10) ? parsedTime : Math.floor(parsedTime / 1000);
-            }
-        }
+        if (typeof time === 'string') return parseInt(time).toString().length === 10 ? parseInt(time) : Math.floor(parseInt(time) / 1000);
         if (time instanceof Date) return Math.floor(time.getTime() / 1000);
-        if (typeof time === 'object' && time !== null) {
-            if (time.timestamp) return normalizeTimestamp(time.timestamp);
-            if (time.time) return normalizeTimestamp(time.time);
-        }
+        if (typeof time === 'object' && time !== null) return normalizeTimestamp(time.timestamp || time.time);
         return null;
     };
-
     const setVisibleRangeToLastNBars = (n = 250, padding = 20) => {
         if (!chartRef.current || !lastDataRef.current?.ohlc) return;
         try {
             const timeScale = chartRef.current.timeScale();
-            const ohlcData = lastDataRef.current.ohlc;
-            if (ohlcData.length === 0) return;
-            const dataLength = ohlcData.length;
+            const dataLength = lastDataRef.current.ohlc.length;
+            if (dataLength === 0) return;
             const futurePadding = showForecast ? 60 : 0;
-            const fromIndex = Math.max(0, dataLength - n);
-            const toIndex = (dataLength - 1) + padding + futurePadding;
-            timeScale.setVisibleLogicalRange({ from: fromIndex, to: toIndex });
-        } catch (e) { console.warn("Error setting visible range:", e); }
+            timeScale.setVisibleLogicalRange({ from: Math.max(0, dataLength - n), to: (dataLength - 1) + padding + futurePadding });
+        } catch (e) {}
     };
-
     const handleResetView = () => {
         if (!chartRef.current || !chartContainerRef.current) return;
         setVisibleRangeToLastNBars(150);
         try {
-            ['right', 'cyclic', 'noise'].forEach(scaleId => {
-                const scale = chartRef.current.priceScale(scaleId);
-                if (scale) scale.applyOptions({ autoScale: true, scaleMargins: { top: 0.1, bottom: 0.1 } });
-            });
-        } catch (e) { console.warn("Error resetting scales:", e); }
-
-        setTimeout(() => {
-            try {
+            ['right', 'cyclic', 'noise'].forEach(id => chartRef.current.priceScale(id)?.applyOptions({ autoScale: true, scaleMargins: { top: 0.1, bottom: 0.1 } }));
+            setTimeout(() => {
                 const panes = chartRef.current.panes();
                 const totalH = chartContainerRef.current.clientHeight;
-                if (panes && panes.length >= 3) {
-                    const fixedH = 150;
-                    const buffer = 10;
-                    const availableForMain = totalH - (fixedH * 2) - buffer;
-                    if (availableForMain > 50) {
-                        panes[1].setHeight(fixedH);
-                        panes[2].setHeight(fixedH);
-                        panes[0].setHeight(availableForMain);
-                    }
+                if (panes && panes.length >= 3 && (totalH - 310) > 50) {
+                    panes[1].setHeight(150); panes[2].setHeight(150); panes[0].setHeight(totalH - 310);
                 }
-            } catch (e) { console.error("Pane reset error:", e); }
-        }, 10);
+            }, 10);
+        } catch (e) {}
     };
-
-    // ================================================================== //
-    // ORIGINAL Hotspot & Marker Calculations
-    // ================================================================== //
     const calculateHotspotData = (ohlcRaw, trendRaw, reconRaw) => {
         if (!ohlcRaw || !trendRaw || !reconRaw || ohlcRaw.length === 0) return [];
-        const priceMap = new Map();
-        ohlcRaw.forEach(d => priceMap.set(normalizeTimestamp(d.time), d.close));
-        const trendMap = new Map();
-        trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
-        const reconMap = new Map();
-        reconRaw.forEach(d => reconMap.set(d.time, d.value));
+        const priceMap = new Map(); ohlcRaw.forEach(d => priceMap.set(normalizeTimestamp(d.time), d.close));
+        const trendMap = new Map(); trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
+        const reconMap = new Map(); reconRaw.forEach(d => reconMap.set(d.time, d.value));
         const allTimes = reconRaw.map(d => d.time);
         const trendValues = allTimes.map(time => trendMap.get(time));
         const trendRising = new Array(allTimes.length).fill(false);
         for (let i = 1; i < trendValues.length; i++) {
-            if (trendValues[i] !== undefined && trendValues[i-1] !== undefined) {
-                trendRising[i] = trendValues[i] > trendValues[i-1];
-            } else if (i > 1) {
-                trendRising[i] = trendRising[i-1];
-            }
+             if (trendValues[i] !== undefined && trendValues[i-1] !== undefined) trendRising[i] = trendValues[i] > trendValues[i-1];
+             else if (i > 1) trendRising[i] = trendRising[i-1];
         }
         if (trendValues.length > 1) trendRising[0] = trendRising[1];
-        const hotspotCandles = [];
+        const res = [];
         for (let i = 0; i < allTimes.length; i++) {
-            const time = allTimes[i];
-            const price = priceMap.get(time);
-            const recon = reconMap.get(time);
-            const trend = trendMap.get(time);
+            const time = allTimes[i], price = priceMap.get(time), recon = reconMap.get(time), trend = trendMap.get(time);
             if (price === undefined || recon === undefined || trend === undefined) continue;
-            const isTrendRising = trendRising[i];
+            const rising = trendRising[i];
             let color = 'rgba(0,0,0,0)';
-            const alpha = 1.0;
-            if (recon < trend && price < recon) {
-                color = isTrendRising ? `rgba(0, 255, 0, ${alpha})` : `rgba(173, 255, 47, ${alpha})`;
-            } else if (recon > trend && price > recon) {
-                color = !isTrendRising ? `rgba(255, 0, 0, ${alpha})` : `rgba(255, 165, 0, ${alpha})`;
-            }
-            hotspotCandles.push({
-                time, open: price, high: Math.max(price, recon), low: Math.min(price, recon),
-                close: recon, color, borderColor: color
-            });
+            if (recon < trend && price < recon) color = rising ? 'rgba(0,255,0,1)' : 'rgba(173,255,47,1)';
+            else if (recon > trend && price > recon) color = !rising ? 'rgba(255,0,0,1)' : 'rgba(255,165,0,1)';
+            res.push({ time, open: price, high: Math.max(price, recon), low: Math.min(price, recon), close: recon, color, borderColor: color });
         }
-        return hotspotCandles;
+        return res;
     };
-
     const calculateMarkers = (normalizedOhlc, trendRaw, cyclicRaw, noiseRaw) => {
         if (!normalizedOhlc || !trendRaw || !cyclicRaw || !noiseRaw) return [];
-        const priceMap = new Map();
-        normalizedOhlc.forEach(d => priceMap.set(d.time, d.close));
-        const trendMap = new Map();
-        trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
-        const cyclicMap = new Map();
-        cyclicRaw.forEach(d => cyclicMap.set(normalizeTimestamp(d.time), d.value));
-        const sortedNoise = [...noiseRaw]
-            .map(d => ({ ...d, time: normalizeTimestamp(d.time) }))
-            .filter(d => d.time !== null)
-            .sort((a, b) => a.time - b.time);
-
-        const markers = [];
-        const usedTimestamps = new Set();
-
+        const priceMap = new Map(); normalizedOhlc.forEach(d => priceMap.set(d.time, d.close));
+        const trendMap = new Map(); trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
+        const cyclicMap = new Map(); cyclicRaw.forEach(d => cyclicMap.set(normalizeTimestamp(d.time), d.value));
+        const sortedNoise = [...noiseRaw].map(d => ({ ...d, time: normalizeTimestamp(d.time) })).filter(d => d.time).sort((a,b)=>a.time-b.time);
+        const markers = [], used = new Set();
         for (let i = 1; i < sortedNoise.length; i++) {
-            const current = sortedNoise[i];
-            const prev = sortedNoise[i-1];
-            const time = current.time;
-
-            const price = priceMap.get(time);
-            const trend = trendMap.get(time);
-            const cyclic = cyclicMap.get(time);
-            const noiseVal = current.value;
-            const prevNoiseVal = prev.value;
-            if (price === undefined || trend === undefined || cyclic === undefined || noiseVal === undefined) continue;
-            if (usedTimestamps.has(time)) continue;
-
+            const cur = sortedNoise[i], prev = sortedNoise[i-1], time = cur.time;
+            const price = priceMap.get(time), trend = trendMap.get(time), cyclic = cyclicMap.get(time);
+            if (price===undefined || trend===undefined || cyclic===undefined || used.has(time)) continue;
             const recon = trend + cyclic;
-
-            const isBuyHotspot = (recon < trend) && (price < recon);
-            const isBuyNoise = (noiseVal < 0) && (noiseVal >= prevNoiseVal);
-            if (isBuyHotspot && isBuyNoise) {
-                markers.push({ time: time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1.5 });
-                usedTimestamps.add(time);
-                continue;
-            }
-
-            const isSellHotspot = (recon > trend) && (price > recon);
-            const isSellNoise = (noiseVal > 0) && (noiseVal <= prevNoiseVal);
-            if (isSellHotspot && isSellNoise) {
-                markers.push({ time: time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: '', size: 1.5 });
-                usedTimestamps.add(time);
+            if ((recon < trend && price < recon) && (cur.value < 0 && cur.value >= prev.value)) {
+                markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1.5 }); used.add(time);
+            } else if ((recon > trend && price > recon) && (cur.value > 0 && cur.value <= prev.value)) {
+                markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: '', size: 1.5 }); used.add(time);
             }
         }
-        markers.sort((a, b) => a.time - b.time);
         return markers;
     };
-
-    // ================================================================== //
-    // MARKERS UPDATE (v5+ compatible)
-    // ================================================================== //
     const updateMarkers = () => {
         if (!lastDataRef.current || !markersInstanceRef.current) return;
-
         if (showSignals) {
-            const data = lastDataRef.current;
-            const normalizedOhlc = data.ohlc.map(d => ({...d, time: normalizeTimestamp(d.time)})).sort((a,b)=>a.time-b.time);
-            const markers = calculateMarkers(normalizedOhlc, data.ssa.trend, data.ssa.cyclic, data.ssa.noise);
-            console.log(`[UpdateMarkers] Applying ${markers.length} markers.`);
-            markersInstanceRef.current.setMarkers(markers);
-        } else {
-            markersInstanceRef.current.setMarkers([]);
-        }
+            const d = lastDataRef.current;
+            const nOhlc = d.ohlc.map(x=>({...x, time: normalizeTimestamp(x.time)})).sort((a,b)=>a.time-b.time);
+            markersInstanceRef.current.setMarkers(calculateMarkers(nOhlc, d.ssa.trend, d.ssa.cyclic, d.ssa.noise));
+        } else markersInstanceRef.current.setMarkers([]);
     };
-
     useEffect(() => { updateMarkers(); }, [showSignals]);
 
     // ================================================================== //
-    // FULL DATA FETCH (original logic)
+    // FETCH DATA
     // ================================================================== //
     const fetchData = async () => {
         if (!chartRef.current) return;
-        setLoading(true);
-        setError(null);
-
+        setLoading(true); setError(null);
         try {
             const data = await getChartData(symbol, interval, lValue, useAdaptiveL);
             lastDataRef.current = data;
-
             if (data && data.ohlc && data.ssa) {
-                if (data.ohlc.length === 0) {
-                    setError("Received empty OHLC data.");
+                if (data.ohlc.length === 0) { setError("Received empty OHLC data."); return; }
+                const nOhlc = data.ohlc.map(c => ({ ...c, time: normalizeTimestamp(c.time) })).filter(c=>c.time).sort((a,b)=>a.time-b.time);
+                
+                if (internalChartType === 'line') {
+                    seriesRefs.current.mainSeries.setData(nOhlc.map(c=>({time:c.time, value:c.close})));
                 } else {
-                    const normalizedOhlc = data.ohlc.map(candle => ({
-                        ...candle, time: normalizeTimestamp(candle.time)
-                    })).filter(c => c.time !== null).sort((a, b) => a.time - b.time);
-
-                    if (internalChartType === 'line') {
-                        const lineData = normalizedOhlc.map(c => ({ time: c.time, value: c.close }));
-                        seriesRefs.current.mainSeries.setData(lineData);
-                    } else {
-                        seriesRefs.current.mainSeries.setData(normalizedOhlc);
-                    }
-
-                    const trendData = data.ssa.trend || [];
-                    const coloredTrendData = trendData.map((point, i) => {
-                        const t = normalizeTimestamp(point.time);
-                        if (i === 0 || t === null) return { ...point, time: t, color: '#888888' };
-                        const prevValue = trendData[i - 1].value;
-                        const color = point.value >= prevValue ? '#26a69a' : '#ef5350';
-                        return { ...point, time: t, color };
-                    }).filter(p => p.time !== null);
-                    if (seriesRefs.current.trend) seriesRefs.current.trend.setData(coloredTrendData);
-
-                    const cyclicData = data.ssa.cyclic || [];
-                    const coloredCyclicData = cyclicData.map((point, i) => {
-                        const t = normalizeTimestamp(point.time);
-                        if (i === 0 || t === null) return { time: t, value: point.value, color: '#808080' };
-                        const y1 = cyclicData[i - 1].value;
-                        const y2 = point.value;
-                        let color = '#808080';
-                        if (y2 < 0) color = y2 < y1 ? '#006400' : '#00FF00';
-                        else if (y2 > 0) color = y2 > y1 ? '#8B0000' : '#FFA500';
-                        return { time: t, value: point.value, color };
-                    }).filter(p => p.time !== null);
-                    if (seriesRefs.current.cyclic) seriesRefs.current.cyclic.setData(coloredCyclicData);
-
-                    const noiseData = data.ssa.noise || [];
-                    const coloredNoiseData = noiseData.map((point) => {
-                        const t = normalizeTimestamp(point.time);
-                        if (t === null) return null;
-                        const color = point.value < 0 ? '#00FF00' : (point.value > 0 ? '#FF0000' : '#808080');
-                        return { time: t, value: point.value, color };
-                    }).filter(p => p !== null);
-                    if (seriesRefs.current.noise) seriesRefs.current.noise.setData(coloredNoiseData);
-
-                    const reconstructedData = [];
-                    for (let i = 0; i < trendData.length; i++) {
-                        if (trendData[i] && cyclicData[i] && trendData[i].time === cyclicData[i].time) {
-                            const t = normalizeTimestamp(trendData[i].time);
-                            if (t !== null) {
-                                reconstructedData.push({ time: t, value: trendData[i].value + cyclicData[i].value });
-                            }
-                        }
-                    }
-                    reconstructedData.sort((a, b) => a.time - b.time);
-                    if (seriesRefs.current.reconstructed) seriesRefs.current.reconstructed.setData(reconstructedData);
-
-                    const hotspotData = calculateHotspotData(data.ohlc, data.ssa.trend, reconstructedData);
-                    if (seriesRefs.current.hotspotSeries) seriesRefs.current.hotspotSeries.setData(hotspotData);
-
-                    if (seriesRefs.current.forecast && data.forecast) {
-                        const forecastData = data.forecast.map(item => ({
-                            time: normalizeTimestamp(item.time), value: item.value
-                        })).filter(d => d.time !== null);
-                        seriesRefs.current.forecast.setData(forecastData);
-                    }
-
-                    if (seriesRefs.current.cyclicZeroLine) seriesRefs.current.cyclicZeroLine.setData(coloredTrendData.map(p => ({ time: p.time, value: 0, color: p.color })));
-                    if (seriesRefs.current.noiseZeroLine) seriesRefs.current.noiseZeroLine.setData(coloredCyclicData.map(p => ({ time: p.time, value: 0, color: p.color })));
-
-                    updateMarkers();
-                    handleResetView();
+                    seriesRefs.current.mainSeries.setData(nOhlc);
                 }
-            } else {
-                setError("Received invalid data structure.");
-            }
-        } catch (err) {
-            console.error("Fetch error:", err);
-            setError(err.message || "Failed to fetch data.");
-        } finally {
-            setLoading(false);
-        }
+
+                const mkSeriesData = (raw, colorFn) => {
+                    if (!raw) return [];
+                    return raw.map((p, i) => {
+                        const t = normalizeTimestamp(p.time);
+                        if (!t) return null;
+                        return { ...p, time: t, color: colorFn(p, i, raw) };
+                    }).filter(x=>x);
+                };
+
+                const trendD = mkSeriesData(data.ssa.trend, (p,i,arr) => (i===0 ? '#888' : (p.value >= arr[i-1].value ? '#26a69a' : '#ef5350')));
+                if (seriesRefs.current.trend) seriesRefs.current.trend.setData(trendD);
+
+                const cyclicD = mkSeriesData(data.ssa.cyclic, (p,i,arr) => {
+                    if (i===0) return '#808080';
+                    const y2=p.value, y1=arr[i-1].value;
+                    if (y2<0) return y2<y1?'#006400':'#00FF00';
+                    return y2>y1?'#8B0000':'#FFA500';
+                });
+                if (seriesRefs.current.cyclic) seriesRefs.current.cyclic.setData(cyclicD);
+
+                const noiseD = mkSeriesData(data.ssa.noise, (p) => p.value<0?'#00FF00':(p.value>0?'#FF0000':'#808080'));
+                if (seriesRefs.current.noise) seriesRefs.current.noise.setData(noiseD);
+
+                const reconD = [];
+                const trendMap = new Map(trendD.map(x=>[x.time, x.value]));
+                const cyclicMap = new Map(cyclicD.map(x=>[x.time, x.value]));
+                trendD.forEach(x => {
+                    const cVal = cyclicMap.get(x.time);
+                    if (cVal !== undefined) reconD.push({ time: x.time, value: x.value + cVal });
+                });
+                if (seriesRefs.current.reconstructed) seriesRefs.current.reconstructed.setData(reconD);
+
+                if (seriesRefs.current.hotspotSeries) seriesRefs.current.hotspotSeries.setData(calculateHotspotData(data.ohlc, data.ssa.trend, reconD));
+
+                if (seriesRefs.current.forecast && data.forecast) {
+                    seriesRefs.current.forecast.setData(data.forecast.map(x=>({time: normalizeTimestamp(x.time), value: x.value})).filter(x=>x.time));
+                }
+
+                if (seriesRefs.current.cyclicZeroLine) seriesRefs.current.cyclicZeroLine.setData(trendD.map(x=>({time:x.time, value:0, color:x.color})));
+                if (seriesRefs.current.noiseZeroLine) seriesRefs.current.noiseZeroLine.setData(cyclicD.map(x=>({time:x.time, value:0, color:x.color})));
+
+                updateMarkers();
+                handleResetView();
+            } else { setError("Invalid data structure."); }
+        } catch (e) { console.error(e); setError(e.message); } finally { setLoading(false); }
     };
 
     // ================================================================== //
-    // CHART SETUP + MARKERS
+    // CHART SETUP
     // ================================================================== //
     useEffect(() => {
-
-        //  Force loading state immediately when these props change
         setLoading(true);
-        
-        const currentChartContainer = chartContainerRef.current;
-        if (!currentChartContainer) return;
+        const container = chartContainerRef.current;
+        if (!container) return;
 
-        let chartInstance = null;
-
+        let chart;
         try {
-            chartInstance = createChart(currentChartContainer, {
+            chart = createChart(container, {
                 layout: { background: { type: ColorType.Solid, color: '#1a1a1a' }, textColor: '#d1d4dc' },
                 grid: { vertLines: { color: '#2b2b43' }, horzLines: { color: '#2b2b43' } },
                 timeScale: { timeVisible: true, secondsVisible: interval.includes('min'), borderColor: '#485158', rightOffset: 50 },
-                rightPriceScale: { borderColor: '#485158' },
-                width: currentChartContainer.clientWidth,
-                height: currentChartContainer.clientHeight,
+                rightPriceScale: { 
+                    borderColor: '#485158',
+                    mode: PriceScaleMode.Logarithmic // <--- HARDCODED LOG SCALE
+                },
+                width: container.clientWidth,
+                height: container.clientHeight,
             });
-            chartRef.current = chartInstance;
+            chartRef.current = chart;
 
             if (internalChartType === 'line') {
-                seriesRefs.current.mainSeries = chartInstance.addSeries(LineSeries, { color: '#26a69a', lineWidth: 2, priceLineVisible: false });
+                seriesRefs.current.mainSeries = chart.addSeries(LineSeries, { color: '#26a69a', lineWidth: 2, priceLineVisible: false });
             } else {
-                seriesRefs.current.mainSeries = chartInstance.addSeries(CandlestickSeries, {
-                    upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
-                    wickUpColor: '#26a69a', wickDownColor: '#ef5350', priceLineVisible: false
-                });
+                seriesRefs.current.mainSeries = chart.addSeries(CandlestickSeries, { upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350', priceLineVisible: false });
             }
-
             markersInstanceRef.current = createSeriesMarkers(seriesRefs.current.mainSeries, []);
 
-            seriesRefs.current.hotspotSeries = chartInstance.addSeries(CandlestickSeries, { visible: showHotspots, borderVisible: false, priceLineVisible: false });
-            seriesRefs.current.trend = chartInstance.addSeries(LineSeries, { lineWidth: 2, visible: showTrend, priceLineVisible: false });
-            seriesRefs.current.reconstructed = chartInstance.addSeries(LineSeries, { color: '#1c86ffff', lineWidth: 3, lineStyle: 1, visible: showReconstructed, priceLineVisible: false });
-            seriesRefs.current.forecast = chartInstance.addSeries(LineSeries, { color: 'magenta', lineWidth: 2, lineStyle: 0, title: '', visible: showForecast, priceLineVisible: false });
+            seriesRefs.current.hotspotSeries = chart.addSeries(CandlestickSeries, { visible: showHotspots, borderVisible: false, priceLineVisible: false });
+            seriesRefs.current.trend = chart.addSeries(LineSeries, { lineWidth: 2, visible: showTrend, priceLineVisible: false });
+            seriesRefs.current.reconstructed = chart.addSeries(LineSeries, { color: '#1c86ffff', lineWidth: 3, lineStyle: 1, visible: showReconstructed, priceLineVisible: false });
+            seriesRefs.current.forecast = chart.addSeries(LineSeries, { color: 'magenta', lineWidth: 2, lineStyle: 0, title: '', visible: showForecast, priceLineVisible: false });
 
-            seriesRefs.current.cyclic = chartInstance.addSeries(HistogramSeries, { priceScaleId: 'cyclic', base: 0, priceLineVisible: false }, 1);
-            seriesRefs.current.cyclicZeroLine = chartInstance.addSeries(LineSeries, { priceScaleId: 'cyclic', lineWidth: 4, priceLineVisible: false }, 1);
-            seriesRefs.current.noise = chartInstance.addSeries(HistogramSeries, { priceScaleId: 'noise', base: 0, priceLineVisible: false }, 2);
-            seriesRefs.current.noiseZeroLine = chartInstance.addSeries(LineSeries, { priceScaleId: 'noise', lineWidth: 4, priceLineVisible: false }, 2);
+            // Panes 1 & 2
+            seriesRefs.current.cyclic = chart.addSeries(HistogramSeries, { priceScaleId: 'cyclic', base: 0, priceLineVisible: false }, 1);
+            seriesRefs.current.cyclicZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'cyclic', lineWidth: 4, priceLineVisible: false }, 1);
+            seriesRefs.current.noise = chart.addSeries(HistogramSeries, { priceScaleId: 'noise', base: 0, priceLineVisible: false }, 2);
+            seriesRefs.current.noiseZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'noise', lineWidth: 4, priceLineVisible: false }, 2);
+            chart.priceScale('cyclic').applyOptions({ borderColor: '#485158' });
+            chart.priceScale('noise').applyOptions({ borderColor: '#485158' });
 
-            chartInstance.priceScale('cyclic').applyOptions({ borderColor: '#485158' });
-            chartInstance.priceScale('noise').applyOptions({ borderColor: '#485158' });
-
-            //setChartReady(true);
-            //fetchData();
-
-            // Force pane layout immediately before data loads
-            try {
-                // IMPORTANT: Make sure this matches the height you chose in handleResetView
-                const fixedH = 150; 
-                const buffer = 10;
-                const totalH = currentChartContainer.clientHeight;
-                const availableForMain = totalH - (fixedH * 2) - buffer;
-
-                // We use 'chartInstance' here because 'chartRef.current' might not be fully ready in React state yet
-                const panes = chartInstance.panes(); 
-                
-                if (panes && panes.length >= 3 && availableForMain > 50) {
-                    // Pane 0 = Main, Pane 1 = Cyclic, Pane 2 = Noise
-                    panes[1].setHeight(fixedH);
-                    panes[2].setHeight(fixedH);
-                    panes[0].setHeight(availableForMain);
-                }
-            } catch (e) {
-                console.warn("Initial pane resize failed", e);
+            // Layout
+            const fixedH=150, buffer=10, totalH=container.clientHeight, avail=totalH-(fixedH*2)-buffer;
+            const panes = chart.panes();
+            if (panes && panes.length>=3 && avail>50) {
+                panes[1].setHeight(fixedH); panes[2].setHeight(fixedH); panes[0].setHeight(avail);
             }
 
             resizeObserver.current = new ResizeObserver(entries => {
-                if (!chartRef.current) return;
-                const { width, height } = entries[0].contentRect;
-                requestAnimationFrame(() => {
-                    if (chartRef.current) {
-                        try { chartRef.current.applyOptions({ width, height }); } catch (e) { }
-                    }
-                });
+                if(chartRef.current) requestAnimationFrame(() => chartRef.current.applyOptions({ width: entries[0].contentRect.width, height: entries[0].contentRect.height }));
             });
-            resizeObserver.current.observe(currentChartContainer);
+            resizeObserver.current.observe(container);
 
-            // =========================================================
-            // FIX: DEBOUNCE DATA FETCH
-            // Use a timeout to absorb rapid prop updates (like interval + lValue)
-            // =========================================================
-            const fetchDelay = setTimeout(() => {
-                // Double check chart wasn't destroyed during the delay
-                if (chartRef.current) {
-                    setChartReady(true);
-                    fetchData();
-                }
-            }, 50); // 50ms delay is invisible to user but stops double-fetching
+            const fetchDelay = setTimeout(() => { if (chartRef.current) { setChartReady(true); fetchData(); } }, 50);
 
-            // CLEANUP FUNCTION
             return () => {
-                clearTimeout(fetchDelay); // <--- CANCEL the fetch if props change quickly
-                
+                clearTimeout(fetchDelay);
                 if (resizeObserver.current) resizeObserver.current.disconnect();
-                if (chartRef.current) { 
-                    chartRef.current.remove(); 
-                    chartRef.current = null; 
-                }
-                seriesRefs.current = {};
-                markersInstanceRef.current = null;
-                setChartReady(false);
+                if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
+                seriesRefs.current = {}; markersInstanceRef.current = null; setChartReady(false);
             };
-
-        } catch (err) {
-            console.error("Setup error:", err);
-            setError(`Init Error: ${err.message}`);
-            setLoading(false);
-        }
-        // Note: The return above handles the cleanup for the success path.
-        // If we error out, we don't need special cleanup beyond React's unmount.
+        } catch (e) { console.error(e); setError(e.message); setLoading(false); }
     }, [symbol, interval, lValue, useAdaptiveL]);
 
     // ================================================================== //
-    // FULL AUTO-UPDATE + LIVE WEBSOCKET (100% restored)
+    // REALTIME LOGIC
     // ================================================================== //
     useEffect(() => {
         const currentSymbol = symbol;
         let timeoutId = null;
-
         if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
 
         if ((!enableRealtime && !autoUpdate) || !chartReady) {
             if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
             if (realtimeIntervalRef.current) { clearInterval(realtimeIntervalRef.current); clearTimeout(realtimeIntervalRef.current); }
-            setIsRealtime(false);
-            setCountdown(60);
-            currentCandleRef.current = null;
-            return;
+            setIsRealtime(false); setCountdown(60); currentCandleRef.current = null; return;
         }
 
         const runPeriodicRefresh = async () => {
             setCountdown(60);
-            const savedCandle = currentCandleRef.current ? { ...currentCandleRef.current } : null;
             try {
                 const data = await getChartData(symbol, interval, lValue, useAdaptiveL);
                 if (data && data.ohlc) {
                     lastDataRef.current = data;
-                    const normalizedOhlc = data.ohlc.map(d => ({...d, time: normalizeTimestamp(d.time)})).sort((a,b) => a.time - b.time);
-
+                    const nOhlc = data.ohlc.map(d => ({...d, time: normalizeTimestamp(d.time)})).sort((a,b)=>a.time-b.time);
                     if (seriesRefs.current.mainSeries) {
-                        seriesRefs.current.mainSeries.setData(internalChartType === 'line' ? normalizedOhlc.map(d => ({time: d.time, value: d.close})) : normalizedOhlc);
-                        if (savedCandle && internalChartType === 'candle') {
-                            const lastTime = normalizedOhlc[normalizedOhlc.length-1].time;
-                            if (savedCandle.time >= lastTime) seriesRefs.current.mainSeries.update(savedCandle);
-                        }
+                        seriesRefs.current.mainSeries.setData(internalChartType === 'line' ? nOhlc.map(d => ({time: d.time, value: d.close})) : nOhlc);
+                        if (currentCandleRef.current && internalChartType === 'candle' && currentCandleRef.current.time >= nOhlc[nOhlc.length-1].time) seriesRefs.current.mainSeries.update(currentCandleRef.current);
                     }
-
-                    const trendData = data.ssa.trend || [];
-                    const coloredTrendData = trendData.map((point, index) => {
-                        const normalizedTime = normalizeTimestamp(point.time);
-                        if (index === 0 || normalizedTime === null) return { ...point, time: normalizedTime, color: '#888888' };
-                        const prevValue = trendData[index - 1].value;
-                        const color = point.value >= prevValue ? '#26a69a' : '#ef5350';
-                        return { ...point, time: normalizedTime, color };
-                    }).filter(p => p.time !== null);
-                    if (seriesRefs.current.trend) seriesRefs.current.trend.setData(coloredTrendData);
-
-                    const cyclicData = data.ssa.cyclic || [];
-                    const coloredCyclicData = cyclicData.map((point, index) => {
-                        const normalizedTime = normalizeTimestamp(point.time);
-                        if (index === 0 || normalizedTime === null) return { time: normalizedTime, value: point.value, color: '#808080' };
-                        const y1 = cyclicData[index - 1].value;
-                        const y2 = point.value;
-                        let color = '#808080';
-                        if (y2 < 0) color = y2 < y1 ? '#006400' : '#00FF00';
-                        else if (y2 > 0) color = y2 > y1 ? '#8B0000' : '#FFA500';
-                        return { time: normalizedTime, value: point.value, color };
-                    }).filter(p => p.time !== null);
-                    if (seriesRefs.current.cyclic) seriesRefs.current.cyclic.setData(coloredCyclicData);
-
-                    const noiseData = data.ssa.noise || [];
-                    const coloredNoiseData = noiseData.map((point) => {
-                        const normalizedTime = normalizeTimestamp(point.time);
-                        if (normalizedTime === null) return null;
-                        const color = point.value < 0 ? '#00FF00' : (point.value > 0 ? '#FF0000' : '#808080');
-                        return { time: normalizedTime, value: point.value, color };
-                    }).filter(p => p !== null);
-                    if (seriesRefs.current.noise) seriesRefs.current.noise.setData(coloredNoiseData);
-
-                    const reconstructedData = [];
-                    for (let i = 0; i < trendData.length; i++) {
-                        if (trendData[i] && cyclicData[i] && trendData[i].time === cyclicData[i].time) {
-                            const normalizedTime = normalizeTimestamp(trendData[i].time);
-                            if (normalizedTime !== null) {
-                                reconstructedData.push({ time: normalizedTime, value: trendData[i].value + cyclicData[i].value });
-                            }
-                        }
-                    }
-                    reconstructedData.sort((a, b) => a.time - b.time);
-                    if (seriesRefs.current.reconstructed) seriesRefs.current.reconstructed.setData(reconstructedData);
-
-                    const hotspotData = calculateHotspotData(data.ohlc, data.ssa.trend, reconstructedData);
-                    if (seriesRefs.current.hotspotSeries) seriesRefs.current.hotspotSeries.setData(hotspotData);
-
-                    if (seriesRefs.current.forecast && data.forecast) {
-                        const forecastData = data.forecast.map(item => ({
-                            time: normalizeTimestamp(item.time), value: item.value
-                        })).filter(d => d.time !== null);
-                        seriesRefs.current.forecast.setData(forecastData);
-                    }
-
-                    if (seriesRefs.current.cyclicZeroLine) {
-                        seriesRefs.current.cyclicZeroLine.setData(coloredTrendData.map(p => ({ time: p.time, value: 0, color: p.color })));
-                    }
-                    if (seriesRefs.current.noiseZeroLine) {
-                        seriesRefs.current.noiseZeroLine.setData(coloredCyclicData.map(p => ({ time: p.time, value: 0, color: p.color })));
-                    }
-
-                    updateMarkers();
+                    fetchData();
                 }
-            } catch (err) { console.error("Periodic refresh error:", err); }
+            } catch (e) {}
         };
 
         const setupAlignedTimer = () => {
-            // Clear existing timers
             if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-            if (realtimeIntervalRef.current) { 
-                clearInterval(realtimeIntervalRef.current); 
-                clearTimeout(realtimeIntervalRef.current); 
-            }
-
-            const now = new Date();
-            const currentSeconds = now.getSeconds();
-            
-            // --- LOGIC CHANGE HERE ---
-            // We want to target 4 seconds AFTER the minute starts 
-            // to allow the server time to fetch and save data.
-            const targetSecond = 10; 
-            
-            let secondsRemaining = targetSecond - currentSeconds;
-            if (secondsRemaining <= 0) {
-                // If we are past the :04 mark (e.g., it's :10), 
-                // wait for the next minute's :04
-                secondsRemaining += 60;
-            }
-
-            // Update the UI countdown immediately
-            setCountdown(secondsRemaining);
-
-            // 1. Set the visual countdown ticker
-            countdownIntervalRef.current = setInterval(() => {
-                setCountdown(s => {
-                    if (s > 1) return s - 1;
-                    return 60; // Reset to 60 when it hits 0
-                });
-            }, 1000);
-
-            // 2. Set the actual data fetch trigger
-            realtimeIntervalRef.current = setTimeout(() => {
-                // Run the first refresh
-                runPeriodicRefresh();
-                
-                // Then repeat every 60 seconds
-                realtimeIntervalRef.current = setInterval(runPeriodicRefresh, 60000);
-            }, secondsRemaining * 1000);
+            if (realtimeIntervalRef.current) { clearInterval(realtimeIntervalRef.current); clearTimeout(realtimeIntervalRef.current); }
+            const now = new Date(), target=10, rem = target - now.getSeconds();
+            const wait = rem <= 0 ? rem + 60 : rem;
+            setCountdown(wait);
+            countdownIntervalRef.current = setInterval(() => setCountdown(s => s > 1 ? s - 1 : 60), 1000);
+            realtimeIntervalRef.current = setTimeout(() => { runPeriodicRefresh(); realtimeIntervalRef.current = setInterval(runPeriodicRefresh, 60000); }, wait * 1000);
         };
 
         if (enableRealtime && apiKey) {
             timeoutId = setTimeout(() => {
-                const intervalMs = intervalToMs(interval);
                 const ws = new WebSocket(`wss://ws.twelvedata.com/v1/quotes/price?apikey=${apiKey}`);
                 wsRef.current = ws;
-
-                ws.onopen = () => { 
-                    setIsRealtime(true); 
-                    // Subscribe to the symbol
-                    ws.send(JSON.stringify({ action: "subscribe", params: { symbols: symbol } })); 
-                };
-
-                // --- UPDATED ERROR HANDLING HERE ---
+                ws.onopen = () => { setIsRealtime(true); ws.send(JSON.stringify({ action: "subscribe", params: { symbols: symbol } })); };
                 ws.onmessage = (e) => {
                     const d = JSON.parse(e.data);
-
-                    // 1. Handle Price Updates
                     if (d.event === "price" && seriesRefs.current.mainSeries) {
                         const price = parseFloat(d.price);
-                        // Use d.timestamp if available, otherwise fallback to Date.now()
-                        // TwelveData timestamps are usually in seconds or milliseconds depending on the endpoint, 
-                        // but for quotes/price it's often a unix timestamp.
-                        const rawTime = d.timestamp ? d.timestamp : Date.now() / 1000;
-                        
-                        // Ensure we align the time to the chart interval
-                        const time = Math.floor(getCandleStartTime(rawTime * 1000, intervalMs) / 1000);
-
-                        if (internalChartType === 'line') {
-                            seriesRefs.current.mainSeries.update({ time, value: price });
-                        } else {
-                            if (!currentCandleRef.current || currentCandleRef.current.time !== time) {
-                                currentCandleRef.current = { time, open: price, high: price, low: price, close: price };
-                            } else {
-                                currentCandleRef.current.high = Math.max(currentCandleRef.current.high, price);
-                                currentCandleRef.current.low = Math.min(currentCandleRef.current.low, price);
-                                currentCandleRef.current.close = price;
-                            }
+                        const time = Math.floor(getCandleStartTime((d.timestamp || Date.now()/1000) * 1000, intervalToMs(interval)) / 1000);
+                        if (internalChartType === 'line') seriesRefs.current.mainSeries.update({ time, value: price });
+                        else {
+                            if (!currentCandleRef.current || currentCandleRef.current.time !== time) currentCandleRef.current = { time, open: price, high: price, low: price, close: price };
+                            else { currentCandleRef.current.high=Math.max(currentCandleRef.current.high,price); currentCandleRef.current.low=Math.min(currentCandleRef.current.low,price); currentCandleRef.current.close=price; }
                             seriesRefs.current.mainSeries.update(currentCandleRef.current);
                         }
-                    } 
-                    // 2. Handle API Errors (Not Authorized / Invalid Symbol)
-                    else if (d.status === "error") {
-                        console.error("TwelveData WS Error:", d.message);
-                        setError(`Live Error: ${d.message}`); // Show error in UI
-                        setIsRealtime(false); // Turn off "LIVE" badge
-                        if (wsRef.current) wsRef.current.close();
-                    }
+                    } else if (d.status === "error") { setError(d.message); setIsRealtime(false); ws.close(); }
                 };
-
-                // 3. Handle Network Errors
-                ws.onerror = (err) => {
-                    console.error("WebSocket connection error", err);
-                    setError("Live connection failed.");
-                    setIsRealtime(false);
-                };
-
             }, 300);
-        } else { 
-            setIsRealtime(false); 
         }
-
         if (autoUpdate || enableRealtime) setupAlignedTimer();
-
-        return () => {
-            if (timeoutId) clearTimeout(timeoutId);
-            if (wsRef.current) wsRef.current.close();
-            if (realtimeIntervalRef.current) { clearInterval(realtimeIntervalRef.current); clearTimeout(realtimeIntervalRef.current); }
-            if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-        };
+        return () => { clearTimeout(timeoutId); if(wsRef.current) wsRef.current.close(); clearInterval(realtimeIntervalRef.current); clearInterval(countdownIntervalRef.current); };
     }, [enableRealtime, autoUpdate, apiKey, symbol, interval, lValue, useAdaptiveL, chartReady, internalChartType]);
 
     // ================================================================== //
-    // TOGGLES (visibility)
+    // TOGGLES & RENDER
     // ================================================================== //
     useEffect(() => { if (chartReady && seriesRefs.current.trend) seriesRefs.current.trend.applyOptions({ visible: showTrend }); }, [showTrend, chartReady]);
     useEffect(() => { if (chartReady && seriesRefs.current.reconstructed) seriesRefs.current.reconstructed.applyOptions({ visible: showReconstructed }); }, [showReconstructed, chartReady]);
@@ -675,35 +348,21 @@ const TradingChart = ({
         }
     }, [showForecast, chartReady]);
 
-    // ================================================================== //
-    // CHART TYPE TOGGLE (Line/Candle)
-    // ================================================================== //
     useEffect(() => {
         if (!chartReady || !chartRef.current || !seriesRefs.current.mainSeries || !lastDataRef.current) return;
-        const chartInstance = chartRef.current;
-        const currentSeries = seriesRefs.current.mainSeries;
+        const chart = chartRef.current;
         const isLine = internalChartType === 'line';
-
-        chartInstance.removeSeries(currentSeries);
+        chart.removeSeries(seriesRefs.current.mainSeries);
         const newSeries = isLine
-            ? chartInstance.addSeries(LineSeries, { color: '#26a69a', lineWidth: 2, priceLineVisible: false })
-            : chartInstance.addSeries(CandlestickSeries, { upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350', priceLineVisible: false });
-
+            ? chart.addSeries(LineSeries, { color: '#26a69a', lineWidth: 2, priceLineVisible: false })
+            : chart.addSeries(CandlestickSeries, { upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350', priceLineVisible: false });
         markersInstanceRef.current = createSeriesMarkers(newSeries, []);
         seriesRefs.current.mainSeries = newSeries;
-
-        const data = lastDataRef.current.ohlc;
-        if (data) {
-            const formatted = data.map(d => ({ ...d, time: normalizeTimestamp(d.time) })).filter(d => d.time).sort((a,b) => a.time - b.time);
-            newSeries.setData(isLine ? formatted.map(d => ({ time: d.time, value: d.close })) : formatted);
-        }
-
+        const data = lastDataRef.current.ohlc.map(d=>({...d, time: normalizeTimestamp(d.time)})).filter(d=>d.time).sort((a,b)=>a.time-b.time);
+        newSeries.setData(isLine ? data.map(d=>({time:d.time, value:d.close})) : data);
         setTimeout(() => updateMarkers(), 0);
     }, [internalChartType, chartReady]);
 
-    // ================================================================== //
-    // Render (100% valid JSX — no more errors!)
-    // ================================================================== //
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <style>{`
@@ -721,7 +380,8 @@ const TradingChart = ({
                     <button onClick={() => setShowTrend(p => !p)} className={`chart-toggle-button ${showTrend ? 'active' : ''}`} style={{ top: '60px' }}>{showTrend ? 'Trend: ON' : 'Trend: OFF'}</button>
                     <button onClick={() => setShowReconstructed(p => !p)} className={`chart-toggle-button ${showReconstructed ? 'active' : ''}`} style={{ top: '90px' }}>{showReconstructed ? 'Cyclic: ON' : 'Cyclic: OFF'}</button>
                     <button onClick={() => setShowSignals(p => !p)} className={`chart-toggle-button ${showSignals ? 'active' : ''}`} style={{ top: '120px' }}>{showSignals ? 'Signals: ON' : 'Signals: OFF'}</button>
-
+                    
+                    {/* CHART CONTROLS (Bottom Left) - LOG BUTTON REMOVED */}
                     <div style={{ position: 'absolute', left: '10px', top: '150px', zIndex: 10, display: 'flex', gap: '5px' }}>
                         <button onClick={() => setInternalChartType('candle')} className={`chart-toggle-button chart-type-toggle ${internalChartType === 'candle' ? 'active' : ''}`}>Candle</button>
                         <button onClick={() => setInternalChartType('line')} className={`chart-toggle-button chart-type-toggle ${internalChartType === 'line' ? 'active' : ''}`}>Line</button>
@@ -733,20 +393,18 @@ const TradingChart = ({
             {autoUpdate && !isRealtime && <div style={{ position: 'absolute', top: '10px', right: '60px', zIndex: 10, background: 'rgba(0, 188, 212, 0.7)', color: 'white', padding: '2px 8px', fontSize: '12px', borderRadius: '3px', display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00bcd4', animation: 'pulse 2s ease-in-out infinite' }}></span>AUTO (1m)<span style={{color: '#d1d4dc', marginLeft: '5px', fontVariantNumeric: 'tabular-nums'}}>(Next: {countdown}s)</span></div>}
 
             <button onClick={handleResetView} style={{ position: 'absolute', bottom: '10px', left: '10px', zIndex: 10, background: 'rgba(40, 40, 40, 0.8)', color: '#d1d4dc', border: '1px solid #555', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>Reset View</button>
+            
+            {/* ATTRIBUTION FOOTER */}
+            <div style={{
+                position: 'absolute', bottom: '10px', right: '60px', zIndex: 5,
+                color: '#b9b4b4ff', fontSize: '11px', pointerEvents: 'none', fontStyle: 'italic'
+            }}>
+                Data by Twelvedata.com
+            </div>
 
             {loading && !error && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'white', background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '5px' }}>Loading chart data...</div>}
             {error && <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)', color: 'red', background: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '5px', zIndex: 20, maxWidth: '80%' }}>Error: {error}</div>}
-            <div 
-                ref={chartContainerRef} 
-                style={{ 
-                    width: '100%', 
-                    height: '100%',
-                    // This is the key: Hide the chart visually while loading
-                    opacity: loading ? 0 : 1, 
-                    // Optional: makes the reappearance smooth
-                    transition: 'opacity 0.2s ease-in' 
-                }} 
-            />
+            <div ref={chartContainerRef} style={{ width: '100%', height: '100%', opacity: loading ? 0 : 1, transition: 'opacity 0.2s ease-in' }} />
         </div>
     );
 };

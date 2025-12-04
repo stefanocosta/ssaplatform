@@ -272,10 +272,15 @@ def scan_market():
             
             curr_price = close_prices[-1]
             curr_trend = trend[-1]
+            prev_trend = trend[-2] # Previous trend value
+
             curr_recon = reconstructed[-1]
             curr_noise = noise[-1]
             prev_noise = noise[-2]
             
+            # --- NEW: Calculate Trend Direction ---
+            trend_direction = "UP" if curr_trend > prev_trend else "DOWN"
+
             # Hotspot Logic
             # Buy Hotspot: Recon < Trend AND Price < Recon
             is_hotspot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
@@ -299,6 +304,7 @@ def scan_market():
                 active_signals.append({
                     "symbol": symbol,
                     "type": signal_type,
+                    "trend_dir": trend_direction,
                     "price": curr_price,
                     "time": ohlc_data[-1]['time']
                 })
