@@ -4,6 +4,8 @@ import { X, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-reac
 const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
     const [signals, setSignals] = useState([]);
     const [loading, setLoading] = useState(true);
+    // Track which asset is currently active on the chart
+    const [activeSymbol, setActiveSymbol] = useState(null);
 
     useEffect(() => {
         scanMarket();
@@ -27,6 +29,14 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
         }
     };
 
+    const handleSignalClick = (symbol) => {
+        // 1. Update the chart in the background
+        onSelectAsset(symbol);
+        // 2. Highlight this row
+        setActiveSymbol(symbol);
+        // 3. DO NOT CLOSE THE MODAL (Persistent)
+    };
+
     return (
         <div style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -42,7 +52,6 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                 {/* Header */}
                 <div style={{ padding: '15px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2 style={{ color: '#d1d4dc', margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {/* Applied 'spinner' class here */}
                         <RefreshCw className={loading ? 'spinner' : ''} size={20} />
                         Market Scanner ({interval})
                     </h2>
@@ -55,7 +64,6 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                 <div style={{ padding: '15px', overflowY: 'auto', flexGrow: 1 }}>
                     {loading ? (
                         <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
-                            {/* Applied 'spinner' class here as well */}
                             <RefreshCw className="spinner" size={40} style={{ marginBottom: '15px', opacity: 0.7 }} />
                             <p>Scanning market data...</p>
                         </div>
@@ -66,37 +74,49 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                         </div>
                     ) : (
                         <div style={{ display: 'grid', gap: '10px' }}>
-                            {signals.map((sig, idx) => (
-                                <div 
-                                    key={idx}
-                                    onClick={() => { onSelectAsset(sig.symbol); onClose(); }}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                        backgroundColor: '#2a2a2a', padding: '15px', borderRadius: '8px',
-                                        cursor: 'pointer', borderLeft: `4px solid ${sig.type === 'BUY' ? '#00ff00' : '#ff0000'}`,
-                                        animation: 'fadeIn 0.3s ease-in'
-                                    }}
-                                >
-                                    <div>
-                                        <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.1rem' }}>{sig.symbol}</div>
-                                        <div style={{ color: '#888', fontSize: '0.85rem' }}>Price: {sig.price.toFixed(4)}</div>
+                            {signals.map((sig, idx) => {
+                                // Check if this is the active symbol
+                                const isActive = activeSymbol === sig.symbol;
+                                
+                                return (
+                                    <div 
+                                        key={idx}
+                                        onClick={() => handleSignalClick(sig.symbol)}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            // Change background if active to show selection
+                                            backgroundColor: isActive ? '#404040' : '#2a2a2a', 
+                                            // Add a bright border if active
+                                            border: isActive ? '1px solid #0078d4' : '1px solid transparent',
+                                            padding: '15px', borderRadius: '8px',
+                                            cursor: 'pointer', 
+                                            borderLeft: `4px solid ${sig.type === 'BUY' ? '#00ff00' : '#ff0000'}`,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <div>
+                                            <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                                                {sig.symbol}
+                                                {isActive && <span style={{fontSize: '0.7rem', marginLeft: '8px', color: '#00bcd4', textTransform: 'uppercase', border: '1px solid #00bcd4', padding: '1px 4px', borderRadius: '4px'}}>Active</span>}
+                                            </div>
+                                            <div style={{ color: '#888', fontSize: '0.85rem' }}>Price: {sig.price.toFixed(4)}</div>
+                                        </div>
+                                        <div style={{ 
+                                            display: 'flex', alignItems: 'center', gap: '5px',
+                                            color: sig.type === 'BUY' ? '#00ff00' : '#ff0000',
+                                            fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.2)',
+                                            padding: '5px 10px', borderRadius: '4px'
+                                        }}>
+                                            {sig.type === 'BUY' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                                            {sig.type}
+                                        </div>
                                     </div>
-                                    <div style={{ 
-                                        display: 'flex', alignItems: 'center', gap: '5px',
-                                        color: sig.type === 'BUY' ? '#00ff00' : '#ff0000',
-                                        fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.2)',
-                                        padding: '5px 10px', borderRadius: '4px'
-                                    }}>
-                                        {sig.type === 'BUY' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                                        {sig.type}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
                 
-                {/* --- ADDED ANIMATION STYLES HERE --- */}
                 <style>{`
                     @keyframes spin { 
                         0% { transform: rotate(0deg); } 
@@ -105,10 +125,6 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                     .spinner { 
                         animation: spin 1s linear infinite; 
                         display: inline-block;
-                    }
-                    @keyframes fadeIn { 
-                        from { opacity: 0; transform: translateY(5px); } 
-                        to { opacity: 1; transform: translateY(0); } 
                     }
                 `}</style>
             </div>
