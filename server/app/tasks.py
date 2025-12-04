@@ -43,7 +43,7 @@ def update_market_data():
             "symbol": symbols_str,
             "interval": "1min",
             "apikey": api_key,
-            "outputsize": 5 
+            "outputsize": 30 
         }
         
         try:
