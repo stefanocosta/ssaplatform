@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; 
+import { Radar } from 'lucide-react'; // Import Icon for Scan button
 import TradingChart from './components/TradingChart';
 import AuthForm from './components/AuthForm'; 
 import LandingPage from './components/LandingPage'; 
+import ScannerModal from './components/ScannerModal'; // Import Scanner Component
 import './App.css';
 
 function Platform() {
@@ -19,6 +21,9 @@ function Platform() {
   const [inputShowForecast, setInputShowForecast] = useState(false); 
   const [lookupCount, setLookupCount] = useState(0);
   const [finalSymbol, setFinalSymbol] = useState('BTC/USD');
+
+  // --- NEW STATE FOR SCANNER ---
+  const [showScanner, setShowScanner] = useState(false);
   
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
@@ -73,11 +78,9 @@ function Platform() {
     setLookupCount(c => c + 1);
   };
 
-  // --- FIX: CHANGED TO FORM SUBMIT HANDLER ---
   const handleCustomSubmit = (event) => {
-    event.preventDefault(); // Prevent page reload
+    event.preventDefault(); 
     handleLookup();
-    // Optional: Hide keyboard on mobile after search
     if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
     }
@@ -109,6 +112,7 @@ function Platform() {
           borderBottom: '1px solid #444'
         }}>
           
+          {/* Symbol Selector */}
           <span>
             <label style={{ marginRight: '5px' }}>Symbol:</label>
             <select 
@@ -129,7 +133,6 @@ function Platform() {
             </select>
 
             {inputSymbol === 'CUSTOM' && (
-              /* --- FIX: WRAPPED IN FORM FOR MOBILE KEYBOARD SUPPORT --- */
               <form 
                 onSubmit={handleCustomSubmit} 
                 style={{ display: 'inline-block', margin: 0, padding: 0 }}
@@ -140,7 +143,6 @@ function Platform() {
                   onChange={handleCustomSymbolChange}
                   onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())}
                   placeholder="Type & Press Enter"
-                  /* KEYBOARD HINTS FOR MOBILE: */
                   enterKeyHint="search"
                   inputMode="text"
                   style={{ 
@@ -156,6 +158,7 @@ function Platform() {
             )}
           </span>
 
+          {/* Interval Selector */}
           <span>
             <label style={{ marginRight: '5px' }}>Interval:</label>
             <select 
@@ -175,6 +178,7 @@ function Platform() {
             </select>
           </span>
           
+          {/* Toggles */}
           <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <label style={{ color: inputShowHotspots ? '#ffeb3b' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
               <input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{ marginRight: '4px' }} />
@@ -191,6 +195,23 @@ function Platform() {
               Auto
             </label>
           </span>
+
+          {/* --- NEW SCANNER BUTTON --- */}
+          <button
+            onClick={() => setShowScanner(true)}
+            style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                background: '#0078d4', color: 'white', border: 'none',
+                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
+                fontSize: '0.9rem',
+                marginLeft: 'auto' // Pushes to the right if space allows
+            }}
+            title="Scan market for signals"
+          >
+            <Radar size={16} />
+            Scan
+          </button>
+
         </div>
 
         {/* CHART WRAPPER */}
@@ -218,6 +239,19 @@ function Platform() {
             />
           </div>
         </div>
+
+        {/* --- SCANNER MODAL --- */}
+        {showScanner && (
+            <ScannerModal 
+                interval={inputInterval} 
+                onClose={() => setShowScanner(false)}
+                onSelectAsset={(symbol) => {
+                    // Updating inputSymbol triggers the useEffect that sets finalSymbol
+                    setInputSymbol(symbol);
+                }}
+            />
+        )}
+
       </div>
 
       <div className="RotateNotifier">

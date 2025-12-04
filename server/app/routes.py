@@ -11,6 +11,8 @@ from sqlalchemy import select
 from .services import ssa_service, forecast_service
 from app.services.data_manager import get_historical_data
 
+from app.services.data_manager import TRACKED_ASSETS # Import the list
+
 # The main blueprint for API routes
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -219,3 +221,89 @@ def get_chart_data():
     }
 
     return jsonify(response_data)
+
+@bp.route('/scan', methods=['GET'])
+@jwt_required()
+def scan_market():
+    interval = request.args.get('interval', '1day')
+    # Default parameters matching your frontend defaults
+    use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
+    try:
+        l_param = int(request.args.get('l', 30))
+    except ValueError:
+        l_param = 30
+
+    active_signals = []
+
+    # Loop through ALL tracked assets
+    for symbol in TRACKED_ASSETS:
+        # 1. Fetch Data from DB (Fast, no API cost)
+        ohlc_data = get_historical_data(symbol, interval, None, limit=300)
+        
+        if not ohlc_data or len(ohlc_data) < 30:
+            continue
+
+        # 2. Prepare Data for SSA
+        df = pd.DataFrame(ohlc_data)
+        close_prices = df['close'].values.flatten()
+        
+        # 3. Perform SSA (Identical to chart-data logic)
+        N = len(close_prices)
+        if use_adaptive_l:
+            L = 39 
+        else:
+            L = min(l_param, N // 2)
+
+        try:
+            components = ssa_service.ssa_decomposition(close_prices, L)
+            
+            # Extract components
+            trend = components[0]
+            # Cyclic is usually components 1 and 2
+            cyclic = components[1:min(3, L)].sum(axis=0)
+            # Noise is usually components 3, 4, 5
+            noise = components[min(3, L):min(6, L)].sum(axis=0)
+            
+            reconstructed = trend + cyclic
+            
+            # 4. SIGNAL LOGIC (Ported from TradingChart.js)
+            # We check the LAST bar (Current status)
+            # Index -1 is the latest bar, -2 is the previous bar
+            
+            curr_price = close_prices[-1]
+            curr_trend = trend[-1]
+            curr_recon = reconstructed[-1]
+            curr_noise = noise[-1]
+            prev_noise = noise[-2]
+            
+            # Hotspot Logic
+            # Buy Hotspot: Recon < Trend AND Price < Recon
+            is_hotspot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
+            # Sell Hotspot: Recon > Trend AND Price > Recon
+            is_hotspot_sell = (curr_recon > curr_trend) and (curr_price > curr_recon)
+            
+            # Noise Logic (Turning Point)
+            # Buy Noise: Noise < 0 AND Noise is rising (or flat) compared to previous
+            is_noise_buy = (curr_noise < 0) and (curr_noise >= prev_noise)
+            # Sell Noise: Noise > 0 AND Noise is falling (or flat)
+            is_noise_sell = (curr_noise > 0) and (curr_noise <= prev_noise)
+            
+            # Combined Signal
+            signal_type = None
+            if is_hotspot_buy and is_noise_buy:
+                signal_type = "BUY"
+            elif is_hotspot_sell and is_noise_sell:
+                signal_type = "SELL"
+            
+            if signal_type:
+                active_signals.append({
+                    "symbol": symbol,
+                    "type": signal_type,
+                    "price": curr_price,
+                    "time": ohlc_data[-1]['time']
+                })
+                
+        except Exception as e:
+            continue
+
+    return jsonify(active_signals)
