@@ -113,17 +113,25 @@ def get_historical_data(symbol, interval, api_key, limit=300):
         # Only run this if the data is slightly old (>65s) AND we haven't fetched recently.
         # The daemon runs every 60s, so normally the DB is fresh enough.
         elif interval == '1min':
-            cache_key = f"{symbol}_{interval}"
-            current_time = time.time()
-            last_fetch = FETCH_COOLDOWN.get(cache_key, 0)
-            
-            if (current_time - last_fetch > COOLDOWN_1MIN) and (time_diff > 65):
-                latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source=f"HotFetch 1m {symbol}")
-                FETCH_COOLDOWN[cache_key] = time.time()
-                if latest_candles:
-                    for candle in latest_candles:
-                        data_map[candle['time']] = candle
-                    save_to_db(symbol, interval, latest_candles)
+                    cache_key = f"{symbol}_{interval}"
+                    current_time = time.time()
+                    last_fetch = FETCH_COOLDOWN.get(cache_key, 0)
+                    
+                    # --- FIX: INCREASE THRESHOLD TO 130 SECONDS ---
+                    # Rationale:
+                    # At 10:00:59, the latest available closed candle is 09:59:00.
+                    # The difference is 119 seconds. This is NORMAL.
+                    # We only want to panic if the difference is > 120s (Scheduler missed a beat).
+                    if (current_time - last_fetch > COOLDOWN_1MIN) and (time_diff > 130):
+                        
+                        track_api_call(f"HotFetch 1m {symbol} (Diff: {int(time_diff)}s > 130s)") # Added debug info
+                        
+                        latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source=f"HotFetch 1m {symbol}")
+                        FETCH_COOLDOWN[cache_key] = time.time()
+                        if latest_candles:
+                            for candle in latest_candles:
+                                data_map[candle['time']] = candle
+                            save_to_db(symbol, interval, latest_candles)
 
     final_data = sorted(data_map.values(), key=lambda x: x['time'])
 

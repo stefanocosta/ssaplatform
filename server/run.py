@@ -1,25 +1,14 @@
 import os
 from app import create_app
-from flask_apscheduler import APScheduler
-from app.tasks import update_market_data
+# REMOVE scheduler imports from here
 
 app = create_app()
 
-scheduler = APScheduler()
-scheduler.init_app(app)
-scheduler.start()
-
-# --- REMOVED THE "BOOT" BLOCK ---
-# We removed the manual "update_market_data()" call here 
-# to prevent it from clashing with the scheduled job below.
-
-# Scheduled Job (Runs every minute at :00)
-scheduler.add_job(
-    id='market_update_job', 
-    func=update_market_data, 
-    trigger='cron', 
-    second='0' 
-)
+# Gunicorn expects 'app' to be importable here.
+# Do NOT start the scheduler here.
 
 if __name__ == '__main__':
+    # You can keep this for local testing if you want, 
+    # but strictly speaking, local dev should also use the separate script 
+    # to mimic prod.
     app.run(host='0.0.0.0', port=5000, debug=True)
