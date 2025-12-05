@@ -375,7 +375,7 @@ def scan_market():
             forecast_dir = "FLAT"
             try:
                 # Forecast next 20 bars to determine direction
-                f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=20, min_component=1)
+                f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=40, min_component=1)
                 if len(f_vals) > 0:
                     forecast_dir = "UP" if f_vals[-1] > f_vals[0] else "DOWN"
             except Exception:
