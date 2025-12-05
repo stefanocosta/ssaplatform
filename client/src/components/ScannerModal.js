@@ -35,6 +35,13 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
         setIsCollapsed(true);
     };
 
+    // Helper to color code the percentage (Oscillator style)
+    const getPctColor = (val) => {
+        if (val >= 80) return '#ef5350'; // Red (Top/Overbought)
+        if (val <= 20) return '#26a69a'; // Green (Bottom/Oversold)
+        return '#b0b0b0'; // Gray (Mid-range)
+    };
+
     if (isCollapsed) {
         return (
             <div 
@@ -57,7 +64,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
 
     return (
         <div style={{
-            position: 'fixed', top: '110px', right: '20px', bottom: '20px', width: '340px',
+            position: 'fixed', top: '110px', right: '20px', bottom: '20px', width: '380px',
             backgroundColor: 'rgba(30, 30, 30, 0.95)', backdropFilter: 'blur(5px)',
             borderRadius: '12px', border: '1px solid #444',
             display: 'flex', flexDirection: 'column',
@@ -93,9 +100,15 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
                 ) : (
                     <div style={{ display: 'grid', gap: '8px' }}>
                         {/* HEADER ROW */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr', padding: '0 10px', fontSize: '0.75rem', color: '#888', fontWeight: 'bold' }}>
+                        <div style={{ 
+                            display: 'grid', 
+                            gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.8fr', 
+                            padding: '0 10px', fontSize: '0.70rem', color: '#888', fontWeight: 'bold' 
+                        }}>
                             <span>ASSET</span>
-                            <span style={{textAlign: 'center'}}>TREND</span>
+                            <span style={{textAlign: 'center'}}>TRND</span>
+                            <span style={{textAlign: 'center'}}>CYC %</span>
+                            <span style={{textAlign: 'center'}}>FAST %</span>
                             <span style={{textAlign: 'right'}}>SIGNAL</span>
                         </div>
 
@@ -107,38 +120,54 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
                                     onClick={() => handleSignalClick(sig.symbol)}
                                     style={{
                                         display: 'grid', 
-                                        gridTemplateColumns: '1.2fr 0.8fr 1fr',
+                                        gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.8fr',
                                         alignItems: 'center',
                                         backgroundColor: isActive ? '#404040' : '#2a2a2a', 
                                         border: isActive ? '1px solid #0078d4' : '1px solid transparent',
-                                        padding: '10px 12px', borderRadius: '6px',
+                                        padding: '10px 8px', borderRadius: '6px',
                                         cursor: 'pointer', 
                                         borderLeft: `4px solid ${sig.type === 'BUY' ? '#00ff00' : '#ff0000'}`,
                                         transition: 'all 0.2s'
                                     }}
                                 >
                                     {/* COL 1: Asset & Price */}
-                                    <div>
-                                        <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem' }}>{sig.symbol}</div>
-                                        <div style={{ color: '#888', fontSize: '0.75rem' }}>{sig.price.toFixed(4)}</div>
+                                    <div style={{overflow: 'hidden'}}>
+                                        <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sig.symbol}</div>
+                                        <div style={{ color: '#888', fontSize: '0.75rem' }}>{sig.price.toFixed(sig.price < 1 ? 4 : 2)}</div>
                                     </div>
 
-                                    {/* COL 2: Trend Direction (NEW) */}
+                                    {/* COL 2: Trend Direction */}
                                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                                         {sig.trend_dir === 'UP' 
-                                            ? <TrendingUp size={20} color="#26a69a" /> 
-                                            : <TrendingDown size={20} color="#ef5350" />
+                                            ? <TrendingUp size={18} color="#26a69a" /> 
+                                            : <TrendingDown size={18} color="#ef5350" />
                                         }
                                     </div>
 
-                                    {/* COL 3: Signal Badge */}
+                                    {/* COL 3: Cycle Percentage */}
+                                    <div style={{ 
+                                        textAlign: 'center', fontSize: '0.8rem', fontWeight: 'bold',
+                                        color: getPctColor(sig.cycle_pct)
+                                    }}>
+                                        {sig.cycle_pct}%
+                                    </div>
+
+                                    {/* COL 4: Fast Percentage */}
+                                    <div style={{ 
+                                        textAlign: 'center', fontSize: '0.8rem', fontWeight: 'bold',
+                                        color: getPctColor(sig.fast_pct)
+                                    }}>
+                                        {sig.fast_pct}%
+                                    </div>
+
+                                    {/* COL 5: Signal Badge */}
                                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                         <div style={{ 
-                                            display: 'flex', alignItems: 'center', gap: '4px',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
                                             color: sig.type === 'BUY' ? '#00ff00' : '#ff0000',
-                                            fontWeight: 'bold', fontSize: '0.8rem',
+                                            fontWeight: 'bold', fontSize: '0.75rem',
                                             backgroundColor: 'rgba(0,0,0,0.3)',
-                                            padding: '4px 8px', borderRadius: '4px'
+                                            padding: '4px 6px', borderRadius: '4px', minWidth: '40px'
                                         }}>
                                             {sig.type}
                                         </div>

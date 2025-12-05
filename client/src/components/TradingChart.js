@@ -24,6 +24,8 @@ const TradingChart = ({
     const chartContainerRef = useRef(null);
     const chartRef = useRef(null);
     const seriesRefs = useRef({});
+    // Store references to price lines to clear them on updates
+    const priceLinesRef = useRef({ cyclic: [], noise: [] });
     const markersInstanceRef = useRef(null);
     const resizeObserver = useRef(null);
     const wsRef = useRef(null);
@@ -43,10 +45,9 @@ const TradingChart = ({
     const countdownIntervalRef = useRef(null);
     
     const [internalChartType, setInternalChartType] = useState('candle');
-    // Removed isLogScale state - defaulting to Logarithmic always
 
     // ================================================================== //
-    // HELPERS (Unchanged)
+    // HELPERS
     // ================================================================== //
     const intervalToMs = (interval) => {
         const map = { '1min': 60000, '5min': 300000, '15min': 900000, '30min': 1800000, '1h': 3600000, '2h': 7200000, '4h': 14400000, '1day': 86400000, '1week': 604800000, '1month': 2592000000 };
@@ -140,6 +141,46 @@ const TradingChart = ({
     useEffect(() => { updateMarkers(); }, [showSignals]);
 
     // ================================================================== //
+    // NEW: DRAW SUPPORT/RESISTANCE LEVELS ON CYCLIC/NOISE PANELS
+    // ================================================================== //
+    const drawLevels = (seriesName, levels, colorRes = '#ef5350', colorSup = '#26a69a') => {
+        const series = seriesRefs.current[seriesName];
+        const store = priceLinesRef.current[seriesName];
+        
+        if (!series || !levels) return;
+
+        // Clear old lines
+        store.forEach(line => series.removePriceLine(line));
+        priceLinesRef.current[seriesName] = [];
+
+        // Draw Resistance (Average Peak)
+        if (levels.res !== null && levels.res !== undefined) {
+            const line = series.createPriceLine({
+                price: levels.res,
+                color: colorRes,
+                lineWidth: 1.5,
+                lineStyle: 2, // Dashed
+                axisLabelVisible: false,
+                title: '', // Keep clean
+            });
+            priceLinesRef.current[seriesName].push(line);
+        }
+
+        // Draw Support (Average Valley)
+        if (levels.sup !== null && levels.sup !== undefined) {
+            const line = series.createPriceLine({
+                price: levels.sup,
+                color: colorSup,
+                lineWidth: 1.5,
+                lineStyle: 2, // Dashed
+                axisLabelVisible: false,
+                title: '', // Keep clean
+            });
+            priceLinesRef.current[seriesName].push(line);
+        }
+    };
+
+    // ================================================================== //
     // FETCH DATA
     // ================================================================== //
     const fetchData = async () => {
@@ -198,6 +239,12 @@ const TradingChart = ({
 
                 if (seriesRefs.current.cyclicZeroLine) seriesRefs.current.cyclicZeroLine.setData(trendD.map(x=>({time:x.time, value:0, color:x.color})));
                 if (seriesRefs.current.noiseZeroLine) seriesRefs.current.noiseZeroLine.setData(cyclicD.map(x=>({time:x.time, value:0, color:x.color})));
+
+                // --- DRAW LEVELS IF STATS EXIST ---
+                if (data.ssa.stats) {
+                    drawLevels('cyclic', data.ssa.stats.cyclic);
+                    drawLevels('noise', data.ssa.stats.noise);
+                }
 
                 updateMarkers();
                 handleResetView();
@@ -266,7 +313,9 @@ const TradingChart = ({
                 clearTimeout(fetchDelay);
                 if (resizeObserver.current) resizeObserver.current.disconnect();
                 if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
-                seriesRefs.current = {}; markersInstanceRef.current = null; setChartReady(false);
+                seriesRefs.current = {}; 
+                priceLinesRef.current = { cyclic: [], noise: [] }; // Reset refs
+                markersInstanceRef.current = null; setChartReady(false);
             };
         } catch (e) { console.error(e); setError(e.message); setLoading(false); }
     }, [symbol, interval, lValue, useAdaptiveL]);

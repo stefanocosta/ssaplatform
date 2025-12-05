@@ -7,6 +7,7 @@ from . import db
 from app.models import User 
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from sqlalchemy import select 
+from scipy.signal import find_peaks
 
 from .services import ssa_service, forecast_service
 from app.services.data_manager import get_historical_data
@@ -118,7 +119,77 @@ def user_info():
         ), 200
     return jsonify({"msg": "User not found"}), 404
 
-# --- CHART DATA ROUTES (UNCHANGED) ---
+# --- HELPER FUNCTION: CYCLE POSITION ---
+def calculate_cycle_position(component_values, component_type='cyclic'):
+    """Calculate cycle position (0-100%) and direction for a component"""
+    if len(component_values) < 10:
+        return 50, 'flat', None, None
+    
+    current_value = component_values[-1]
+    
+    # Calculate support and resistance levels
+    avg_resistance = None
+    avg_support = None
+    
+    # Find peaks (resistance levels)
+    positive_mask = component_values > 0
+    if np.any(positive_mask):
+        positive_values = np.where(positive_mask, component_values, 0)
+        # Use slightly different percentile for noise vs cyclic if needed
+        percentile_threshold = 60 
+        
+        peaks_indices, _ = find_peaks(positive_values, 
+                                    height=np.percentile(positive_values[positive_mask], percentile_threshold),
+                                    distance=max(1, len(component_values)//30))
+        if len(peaks_indices) > 0:
+            avg_resistance = np.mean(component_values[peaks_indices])
+    
+    # Find valleys (support levels)
+    negative_mask = component_values < 0
+    if np.any(negative_mask):
+        negative_values = np.where(negative_mask, -component_values, 0)
+        percentile_threshold = 60
+        
+        valleys_indices, _ = find_peaks(negative_values,
+                                      height=np.percentile(negative_values[negative_mask], percentile_threshold),
+                                      distance=max(1, len(component_values)//30))
+        if len(valleys_indices) > 0:
+            # Note: component values are negative, so mean is negative
+            avg_support = np.mean(component_values[valleys_indices])
+    
+    # Calculate cycle position (0-100%)
+    cycle_position = 50
+    if avg_resistance is not None and avg_support is not None:
+        cycle_range = avg_resistance - avg_support
+        if cycle_range > 0:
+            # Map position: Support = 0%, Resistance = 100%
+            cycle_position = ((current_value - avg_support) / cycle_range) * 100
+            # Allow >100 or <0 to show extreme overbought/oversold
+            cycle_position = round(cycle_position, 1)
+            
+    elif avg_resistance is not None:
+        if current_value >= avg_resistance * 0.8: cycle_position = 85
+        elif current_value <= 0: cycle_position = 15
+    elif avg_support is not None:
+        if current_value <= avg_support * 0.8: cycle_position = 15
+        elif current_value >= 0: cycle_position = 85
+    
+    # Calculate direction
+    direction = 'flat'
+    if len(component_values) >= 5:
+        recent_values = component_values[-5:]
+        trend_slope = np.polyfit(range(len(recent_values)), recent_values, 1)[0]
+        if trend_slope > 0.0001: direction = 'rising'
+        elif trend_slope < -0.0001: direction = 'falling'
+        else:
+            if len(component_values) >= 3:
+                recent_change = component_values[-1] - component_values[-3]
+                if recent_change > 0.001: direction = 'rising'
+                elif recent_change < -0.001: direction = 'falling'
+    
+    return cycle_position, direction, avg_resistance, avg_support
+
+# --- CHART DATA ROUTES ---
 
 @bp.route('/chart-data', methods=['GET'])
 @jwt_required()
@@ -168,6 +239,10 @@ def get_chart_data():
     cyclic = components[1:min(3, L)].sum(axis=0) if components.shape[0] > 1 and L > 1 else np.zeros_like(close_prices)
     noise = components[min(3, L):min(6, L)].sum(axis=0) if components.shape[0] >= min(3, L) and L > min(3, L) else np.zeros_like(close_prices)
 
+    # --- NEW: Calculate Cycle Stats ---
+    cyc_pos, cyc_dir, cyc_res, cyc_sup = calculate_cycle_position(cyclic, 'cyclic')
+    noise_pos, noise_dir, noise_res, noise_sup = calculate_cycle_position(noise, 'noise')
+
     forecast_steps = 40
     forecast_payload = []
     try:
@@ -215,7 +290,16 @@ def get_chart_data():
 
     response_data = {
         "ohlc": ohlc_data_serializable,
-        "ssa": { "trend": trend_data, "cyclic": cyclic_data, "noise": noise_data },
+        "ssa": { 
+            "trend": trend_data, 
+            "cyclic": cyclic_data, 
+            "noise": noise_data,
+            # --- SEND STATS TO FRONTEND ---
+            "stats": {
+                "cyclic": { "pos": cyc_pos, "dir": cyc_dir, "res": cyc_res, "sup": cyc_sup },
+                "noise": { "pos": noise_pos, "dir": noise_dir, "res": noise_res, "sup": noise_sup }
+            }
+        },
         "l_used": int(L),
         "forecast": forecast_payload 
     }
@@ -226,7 +310,6 @@ def get_chart_data():
 @jwt_required()
 def scan_market():
     interval = request.args.get('interval', '1day')
-    # Default parameters matching your frontend defaults
     use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
     try:
         l_param = int(request.args.get('l', 30))
@@ -235,19 +318,18 @@ def scan_market():
 
     active_signals = []
 
-    # Loop through ALL tracked assets
     for symbol in TRACKED_ASSETS:
-        # 1. Fetch Data from DB (Fast, no API cost)
+        # 1. Fetch Data
         ohlc_data = get_historical_data(symbol, interval, None, limit=500)
         
         if not ohlc_data or len(ohlc_data) < 30:
             continue
 
-        # 2. Prepare Data for SSA
+        # 2. Prepare Data
         df = pd.DataFrame(ohlc_data)
         close_prices = df['close'].values.flatten()
         
-        # 3. Perform SSA (Identical to chart-data logic)
+        # 3. Perform SSA
         N = len(close_prices)
         if use_adaptive_l:
             L = 39 
@@ -257,43 +339,36 @@ def scan_market():
         try:
             components = ssa_service.ssa_decomposition(close_prices, L)
             
-            # Extract components
             trend = components[0]
-            # Cyclic is usually components 1 and 2
             cyclic = components[1:min(3, L)].sum(axis=0)
-            # Noise is usually components 3, 4, 5
             noise = components[min(3, L):min(6, L)].sum(axis=0)
             
             reconstructed = trend + cyclic
             
-            # 4. SIGNAL LOGIC (Ported from TradingChart.js)
-            # We check the LAST bar (Current status)
-            # Index -1 is the latest bar, -2 is the previous bar
-            
+            # 4. CALCULATE PERCENTAGE POSITIONS (0% = Valley, 100% = Peak)
+            # We use the helper function already defined in this file
+            cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
+            fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
+
+            # 5. SIGNAL LOGIC
             curr_price = close_prices[-1]
             curr_trend = trend[-1]
-            prev_trend = trend[-2] # Previous trend value
+            prev_trend = trend[-2]
 
             curr_recon = reconstructed[-1]
             curr_noise = noise[-1]
             prev_noise = noise[-2]
             
-            # --- NEW: Calculate Trend Direction ---
             trend_direction = "UP" if curr_trend > prev_trend else "DOWN"
 
             # Hotspot Logic
-            # Buy Hotspot: Recon < Trend AND Price < Recon
             is_hotspot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
-            # Sell Hotspot: Recon > Trend AND Price > Recon
             is_hotspot_sell = (curr_recon > curr_trend) and (curr_price > curr_recon)
             
-            # Noise Logic (Turning Point)
-            # Buy Noise: Noise < 0 AND Noise is rising (or flat) compared to previous
+            # Noise Logic
             is_noise_buy = (curr_noise < 0) and (curr_noise >= prev_noise)
-            # Sell Noise: Noise > 0 AND Noise is falling (or flat)
             is_noise_sell = (curr_noise > 0) and (curr_noise <= prev_noise)
             
-            # Combined Signal
             signal_type = None
             if is_hotspot_buy and is_noise_buy:
                 signal_type = "BUY"
@@ -305,6 +380,8 @@ def scan_market():
                     "symbol": symbol,
                     "type": signal_type,
                     "trend_dir": trend_direction,
+                    "cycle_pct": int(cyc_pos),   # <--- Now sending Integer Percentage
+                    "fast_pct": int(fast_pos),   # <--- Now sending Integer Percentage
                     "price": curr_price,
                     "time": ohlc_data[-1]['time']
                 })

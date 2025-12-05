@@ -94,14 +94,23 @@ const ManualModal = ({ onClose }) => {
                     <section>
                         <h3>6. The Market Scanner</h3>
                         <p>
-                            The Scanner automates the search for opportunities. Instead of manually checking every asset, the Scanner analyzes the entire asset list in seconds using the selected timeframe.
+                            The Scanner automates the search for opportunities. Instead of manually checking every asset, the Scanner analyzes the entire asset list in seconds.
                         </p>
                         <ul>
                             <li><strong>Trend Column:</strong> Indicates the current slope of the Zero-Lag Trend. 
                                 (<span style={{color: '#00c853'}}>Up Arrow</span> = Bullish, <span style={{color: '#ff3d00'}}>Down Arrow</span> = Bearish).
                             </li>
+                            <li>
+                                <strong>Cycle % & Fast %:</strong> These percentages show the component's position relative to its historical range.
+                                <ul>
+                                    <li><strong>0%</strong> = Historical Support (Valley).</li>
+                                    <li><strong>100%</strong> = Historical Resistance (Peak).</li>
+                                    <li><span style={{color: '#00c853'}}><strong>Green (&lt; 20%):</strong></span> The cycle is bottoming out (Oversold).</li>
+                                    <li><span style={{color: '#ff3d00'}}><strong>Red (&gt; 80%):</strong></span> The cycle is topping out (Overbought).</li>
+                                    <li><em>Note: Values can exceed 100% (strong overbought) or drop below 0% (strong oversold).</em></li>
+                                </ul>
+                            </li>
                             <li><strong>Signal Column:</strong> Only appears if a valid "Pinpoint Signal" (Section 4) is detected on the current bar.</li>
-                            <li><strong>Interactive Panel:</strong> Clicking an asset in the scanner instantly loads that chart and minimizes the scanner to the side. Click the side tab to reopen it.</li>
                         </ul>
                     </section>
 
