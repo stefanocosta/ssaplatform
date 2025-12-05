@@ -10,6 +10,47 @@ import {
 } from 'lightweight-charts';
 import { getChartData } from '../services/api';
 
+// ================================================================== //
+// UPDATED: Custom Primitive for Pane Labels (Bottom-Right)
+// ================================================================== //
+class SeriesLabelPrimitive {
+    constructor(label) {
+        this._label = label;
+        this._view = {
+            zOrder: () => 'top', 
+            renderer: () => ({
+                draw: (target) => {
+                    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+                        ctx.save();
+                        
+                        // 1. Styling
+                        ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif';
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; 
+                        ctx.shadowColor = 'black'; 
+                        ctx.shadowBlur = 2;
+                        
+                        // 2. Alignment Changes for Bottom-Right
+                        ctx.textAlign = 'right';      // Align text to the right of the x-coordinate
+                        ctx.textBaseline = 'bottom';
+                        
+                        // 3. Position: Bottom-Right
+                        // mediaSize.width gives us the full width of the pane
+                        const x = mediaSize.width - 10; // 10px padding from the right edge
+                        const y = mediaSize.height - 5; // 5px padding from the bottom
+                        
+                        ctx.fillText(this._label, x, y);
+                        ctx.restore();
+                    });
+                }
+            })
+        };
+    }
+
+    paneViews() {
+        return [this._view];
+    }
+}
+
 const TradingChart = ({
     symbol = 'BTC/USD',
     interval = '1day',
@@ -181,13 +222,11 @@ const TradingChart = ({
     };
 
     // ================================================================== //
-    // FETCH DATA - MODIFIED FOR SILENT UPDATES
+    // FETCH DATA
     // ================================================================== //
     const fetchData = async (isUpdate = false) => {
         if (!chartRef.current) return;
         
-        // ONLY set loading to true if this is the initial load.
-        // If it's an update (background refresh), we skip this to prevent "flashing"
         if (!isUpdate) {
             setLoading(true); 
             setError(null);
@@ -247,7 +286,6 @@ const TradingChart = ({
                 if (seriesRefs.current.cyclicZeroLine) seriesRefs.current.cyclicZeroLine.setData(trendD.map(x=>({time:x.time, value:0, color:x.color})));
                 if (seriesRefs.current.noiseZeroLine) seriesRefs.current.noiseZeroLine.setData(cyclicD.map(x=>({time:x.time, value:0, color:x.color})));
 
-                // --- DRAW LEVELS IF STATS EXIST ---
                 if (data.ssa.stats) {
                     drawLevels('cyclic', data.ssa.stats.cyclic);
                     drawLevels('noise', data.ssa.stats.noise);
@@ -255,8 +293,6 @@ const TradingChart = ({
 
                 updateMarkers();
                 
-                // ONLY reset the view on initial load.
-                // If it's an update, we want to keep the user's current zoom/scroll position.
                 if (!isUpdate) {
                     handleResetView();
                 }
@@ -271,7 +307,6 @@ const TradingChart = ({
     // CHART SETUP
     // ================================================================== //
     useEffect(() => {
-        // Initial Load (isUpdate = false)
         setLoading(true);
         const container = chartContainerRef.current;
         if (!container) return;
@@ -305,9 +340,17 @@ const TradingChart = ({
 
             // Panes 1 & 2
             seriesRefs.current.cyclic = chart.addSeries(HistogramSeries, { priceScaleId: 'cyclic', base: 0, priceLineVisible: false }, 1);
+            // --- ATTACH CYCLIC LABEL ---
+            seriesRefs.current.cyclic.attachPrimitive(new SeriesLabelPrimitive('CYCLIC'));
+
             seriesRefs.current.cyclicZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'cyclic', lineWidth: 4, priceLineVisible: false }, 1);
+            
             seriesRefs.current.noise = chart.addSeries(HistogramSeries, { priceScaleId: 'noise', base: 0, priceLineVisible: false }, 2);
+            // --- ATTACH FAST CYCLIC LABEL ---
+            seriesRefs.current.noise.attachPrimitive(new SeriesLabelPrimitive('FAST CYCLIC'));
+
             seriesRefs.current.noiseZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'noise', lineWidth: 4, priceLineVisible: false }, 2);
+            
             chart.priceScale('cyclic').applyOptions({ borderColor: '#485158' });
             chart.priceScale('noise').applyOptions({ borderColor: '#485158' });
 
@@ -330,7 +373,7 @@ const TradingChart = ({
                 if (resizeObserver.current) resizeObserver.current.disconnect();
                 if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
                 seriesRefs.current = {}; 
-                priceLinesRef.current = { cyclic: [], noise: [] }; // Reset refs
+                priceLinesRef.current = { cyclic: [], noise: [] };
                 markersInstanceRef.current = null; setChartReady(false);
             };
         } catch (e) { console.error(e); setError(e.message); setLoading(false); }
@@ -352,8 +395,6 @@ const TradingChart = ({
 
         const runPeriodicRefresh = async () => {
             setCountdown(60);
-            // CALL FETCHDATA IN SILENT MODE (isUpdate = true)
-            // This updates the data without showing the loading spinner or resetting the zoom.
             await fetchData(true);
         };
 
@@ -437,7 +478,6 @@ const TradingChart = ({
                     <button onClick={() => setShowReconstructed(p => !p)} className={`chart-toggle-button ${showReconstructed ? 'active' : ''}`} style={{ top: '90px' }}>{showReconstructed ? 'Cyclic: ON' : 'Cyclic: OFF'}</button>
                     <button onClick={() => setShowSignals(p => !p)} className={`chart-toggle-button ${showSignals ? 'active' : ''}`} style={{ top: '120px' }}>{showSignals ? 'Signals: ON' : 'Signals: OFF'}</button>
                     
-                    {/* CHART CONTROLS (Bottom Left) - LOG BUTTON REMOVED */}
                     <div style={{ position: 'absolute', left: '10px', top: '150px', zIndex: 10, display: 'flex', gap: '5px' }}>
                         <button onClick={() => setInternalChartType('candle')} className={`chart-toggle-button chart-type-toggle ${internalChartType === 'candle' ? 'active' : ''}`}>Candle</button>
                         <button onClick={() => setInternalChartType('line')} className={`chart-toggle-button chart-type-toggle ${internalChartType === 'line' ? 'active' : ''}`}>Line</button>
@@ -450,7 +490,6 @@ const TradingChart = ({
 
             <button onClick={handleResetView} style={{ position: 'absolute', bottom: '10px', left: '10px', zIndex: 10, background: 'rgba(40, 40, 40, 0.8)', color: '#d1d4dc', border: '1px solid #555', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>Reset View</button>
             
-            {/* ATTRIBUTION FOOTER */}
             <div style={{
                 position: 'absolute', bottom: '10px', right: '60px', zIndex: 5,
                 color: '#b9b4b4ff', fontSize: '11px', pointerEvents: 'none', fontStyle: 'italic'

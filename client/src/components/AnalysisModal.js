@@ -1,21 +1,82 @@
 import React, { useState, useEffect } from 'react';
 import { X, Activity, TrendingUp, TrendingDown, FileText } from 'lucide-react';
 
+// --- NEW COMPONENT: Handles bars that go below 0% or above 100% ---
+const OscillatorBar = ({ value, color }) => {
+    // 1. Define the visual scale range (e.g. -25 to 125)
+    // This provides 'padding' on the sides for values to overflow standard bounds.
+    const MIN_SCALE = -25;
+    const MAX_SCALE = 125;
+    const TOTAL_RANGE = MAX_SCALE - MIN_SCALE;
+
+    // 2. Helper to convert a value to a CSS percentage position within the container
+    const getPosPercent = (val) => {
+        // Clamp visually so it doesn't break the div
+        const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, val));
+        return ((clamped - MIN_SCALE) / TOTAL_RANGE) * 100;
+    };
+
+    const zeroPos = getPosPercent(0);     // The CSS % location of value 0
+    const hundredPos = getPosPercent(100); // The CSS % location of value 100
+    const valuePos = getPosPercent(value); // The CSS % location of the actual value
+
+    // 3. Determine Bar Start and Width
+    // If value is positive, bar starts at 0 and goes right.
+    // If value is negative, bar starts at value and goes right to 0.
+    const barLeft = value >= 0 ? zeroPos : valuePos;
+    const barWidth = Math.abs(valuePos - zeroPos);
+
+    return (
+        <div style={{ position: 'relative', width: '100%', height: '20px', marginTop: '2px' }}>
+            {/* Background Track */}
+            <div style={{ 
+                width: '100%', height: '6px', background: '#333', borderRadius: '3px', 
+                position: 'absolute', top: '7px', overflow: 'hidden' 
+            }}>
+                {/* The Filled Bar */}
+                <div style={{ 
+                    position: 'absolute',
+                    left: `${barLeft}%`,
+                    width: `${barWidth}%`,
+                    height: '100%',
+                    background: color,
+                    transition: 'all 0.5s ease-out',
+                    // Optional: Add a subtle glow if it's overflowing extremes
+                    boxShadow: value > 100 || value < 0 ? `0 0 5px ${color}` : 'none'
+                }} />
+            </div>
+
+            {/* Marker for 0% */}
+            <div style={{ 
+                position: 'absolute', left: `${zeroPos}%`, top: '2px', bottom: '2px', 
+                width: '1px', background: '#666', zIndex: 2 
+            }}>
+                <div style={{ fontSize: '0.5rem', color: '#666', position: 'absolute', top: '-10px', left: '-50%', transform: 'translateX(-2px)' }}>0</div>
+            </div>
+
+            {/* Marker for 100% */}
+            <div style={{ 
+                position: 'absolute', left: `${hundredPos}%`, top: '2px', bottom: '2px', 
+                width: '1px', background: '#666', zIndex: 2 
+            }}>
+                <div style={{ fontSize: '0.5rem', color: '#666', position: 'absolute', top: '-10px', left: '-50%', transform: 'translateX(-4px)' }}>100</div>
+            </div>
+        </div>
+    );
+};
+
 const AnalysisModal = ({ symbol, interval, onClose }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
-    // State to track screen size
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
     useEffect(() => {
-        // 1. Resize Handler for Responsiveness
         const handleResize = () => {
             setIsMobile(window.innerWidth < 768);
         };
 
         window.addEventListener('resize', handleResize);
 
-        // 2. Fetch Data
         const fetchAnalysis = async () => {
             setLoading(true);
             const token = localStorage.getItem('access_token');
@@ -36,14 +97,12 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
 
         if (symbol) fetchAnalysis();
 
-        // Cleanup listener on unmount
         return () => window.removeEventListener('resize', handleResize);
     }, [symbol, interval]);
 
-    // Color helpers
     const getPctColor = (val) => {
-        if (val >= 80) return '#ef5350'; // Red
-        if (val <= 20) return '#26a69a'; // Green
+        if (val >= 80) return '#ef5350'; 
+        if (val <= 20) return '#26a69a'; 
         return '#b0b0b0';
     };
 
@@ -58,15 +117,10 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
     return (
         <div style={{
             position: 'fixed', 
-            // RESPONSIVE POSITIONING:
-            // On Mobile: 20px from right (fits on screen).
-            // On Desktop: 380px from right (to the left of scanner).
             top: isMobile ? '80px' : '100px', 
             right: isMobile ? '10px' : '380px',
             width: '320px',
-            // Ensure it doesn't overflow very small screens
             maxWidth: 'calc(100vw - 20px)', 
-            
             backgroundColor: 'rgba(30, 30, 30, 0.95)', backdropFilter: 'blur(10px)',
             borderRadius: '12px', border: '1px solid #444',
             display: 'flex', flexDirection: 'column',
@@ -116,7 +170,6 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
 
                         {/* STATS GRID */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                            {/* Trend */}
                             <div style={{ background: '#2a2a2a', padding: '10px', borderRadius: '6px' }}>
                                 <div style={{ color: '#888', fontSize: '0.7rem' }}>TREND</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: data.trend === 'Bullish' ? '#26a69a' : '#ef5350', fontWeight: 'bold' }}>
@@ -124,8 +177,6 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                                     {data.trend}
                                 </div>
                             </div>
-                            
-                            {/* Signal Age */}
                             <div style={{ background: '#2a2a2a', padding: '10px', borderRadius: '6px' }}>
                                 <div style={{ color: '#888', fontSize: '0.7rem' }}>SIGNAL AGE</div>
                                 <div style={{ color: '#fff', fontWeight: 'bold' }}>
@@ -134,39 +185,31 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                             </div>
                         </div>
 
-                        {/* CYCLES */}
+                        {/* CYCLES SECTION (UPDATED) */}
                         <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '0.8rem', color: '#ccc' }}>
-                                <span>Cycle Position</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0px', fontSize: '0.8rem', color: '#ccc' }}>
+                                <span>Cyclic</span>
                                 <span style={{ color: getPctColor(data.cycle_pct) }}>{data.cycle_pct}%</span>
                             </div>
-                            <div style={{ width: '100%', height: '6px', background: '#333', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min(100, Math.max(0, data.cycle_pct))}%`, height: '100%', background: getPctColor(data.cycle_pct), transition: 'width 0.5s' }} />
-                            </div>
+                            {/* Replaced simple bar with OscillatorBar */}
+                            <OscillatorBar value={data.cycle_pct} color={getPctColor(data.cycle_pct)} />
                         </div>
 
                         <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '0.8rem', color: '#ccc' }}>
-                                <span>Fast (Noise)</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0px', fontSize: '0.8rem', color: '#ccc' }}>
+                                <span>Fast Cyclic</span>
                                 <span style={{ color: getPctColor(data.fast_pct) }}>{data.fast_pct}%</span>
                             </div>
-                            <div style={{ width: '100%', height: '6px', background: '#333', borderRadius: '3px', overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min(100, Math.max(0, data.fast_pct))}%`, height: '100%', background: getPctColor(data.fast_pct), transition: 'width 0.5s' }} />
-                            </div>
+                            {/* Replaced simple bar with OscillatorBar */}
+                            <OscillatorBar value={data.fast_pct} color={getPctColor(data.fast_pct)} />
                         </div>
 
                         {/* RECOMMENDATION TEXT */}
-                        <div style={{ background: 'rgba(0, 120, 212, 0.1)', borderLeft: '3px solid #0078d4', padding: '10px', borderRadius: '0 6px 6px 0', marginTop: '5px' }}>
+                        <div style={{ background: 'rgba(0, 120, 212, 0.1)', borderLeft: '3px solid #0078d4', padding: '10px', borderRadius: '0 6px 6px 0', marginTop: '10px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0078d4', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>
                                 <FileText size={16} /> Recommendation
                             </div>
-                            <p style={{ 
-                                margin: 0, 
-                                color: '#d1d4dc', 
-                                fontSize: '0.85rem', 
-                                lineHeight: '1.4',
-                                whiteSpace: 'pre-line' 
-                            }}>
+                            <p style={{ margin: 0, color: '#d1d4dc', fontSize: '0.85rem', lineHeight: '1.4', whiteSpace: 'pre-line' }}>
                                 {data.recommendation}
                             </p>
                         </div>
@@ -174,7 +217,7 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                 ) : null}
             </div>
             
-            {/* DISCLAIMER FOOTER */}
+            {/* DISCLAIMER */}
             {!loading && data && (
                 <div style={{ 
                     padding: '10px 15px', 
@@ -186,7 +229,6 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                     <p style={{ margin: 0, color: '#858282ff', fontSize: '0.65rem', lineHeight: '1.3', textAlign: 'justify' }}>
                         <strong>Disclaimer:</strong> This analysis is mathematically generated based on statistical algorithms. 
                         It describes the current technical condition of the asset and is <em>not</em> a recommendation to trade. 
-                        Past performance does not guarantee future results. Use at your own risk.
                     </p>
                 </div>
             )}
