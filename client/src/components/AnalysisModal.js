@@ -4,13 +4,22 @@ import { X, Activity, TrendingUp, TrendingDown, FileText } from 'lucide-react';
 const AnalysisModal = ({ symbol, interval, onClose }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    // State to track screen size
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
     useEffect(() => {
+        // 1. Resize Handler for Responsiveness
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+
+        window.addEventListener('resize', handleResize);
+
+        // 2. Fetch Data
         const fetchAnalysis = async () => {
             setLoading(true);
             const token = localStorage.getItem('access_token');
             try {
-                // Ensure symbol is URL encoded properly (e.g., BTC/USD -> BTC%2FUSD)
                 const safeSymbol = encodeURIComponent(symbol);
                 const response = await fetch(`/api/analyze?symbol=${safeSymbol}&interval=${interval}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -26,6 +35,9 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
         };
 
         if (symbol) fetchAnalysis();
+
+        // Cleanup listener on unmount
+        return () => window.removeEventListener('resize', handleResize);
     }, [symbol, interval]);
 
     // Color helpers
@@ -45,8 +57,16 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
 
     return (
         <div style={{
-            position: 'fixed', top: '100px', right: '380px', // Placed to the left of the scanner
+            position: 'fixed', 
+            // RESPONSIVE POSITIONING:
+            // On Mobile: 20px from right (fits on screen).
+            // On Desktop: 380px from right (to the left of scanner).
+            top: isMobile ? '80px' : '100px', 
+            right: isMobile ? '10px' : '380px',
             width: '320px',
+            // Ensure it doesn't overflow very small screens
+            maxWidth: 'calc(100vw - 20px)', 
+            
             backgroundColor: 'rgba(30, 30, 30, 0.95)', backdropFilter: 'blur(10px)',
             borderRadius: '12px', border: '1px solid #444',
             display: 'flex', flexDirection: 'column',
@@ -145,7 +165,7 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                                 color: '#d1d4dc', 
                                 fontSize: '0.85rem', 
                                 lineHeight: '1.4',
-                                whiteSpace: 'pre-line' /* Added to respect newlines from backend */
+                                whiteSpace: 'pre-line' 
                             }}>
                                 {data.recommendation}
                             </p>
