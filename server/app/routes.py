@@ -402,7 +402,7 @@ def analyze_asset():
         return jsonify({"error": "Symbol required"}), 400
 
     api_key = current_app.config['TWELVE_DATA_API_KEY']
-    ohlc_data = get_historical_data(symbol, interval, api_key, limit=300)
+    ohlc_data = get_historical_data(symbol, interval, api_key, limit=500)
     
     if not ohlc_data or len(ohlc_data) < 50:
         return jsonify({"error": "Insufficient data"}), 400
