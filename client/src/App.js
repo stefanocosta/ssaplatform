@@ -54,6 +54,10 @@ function Platform() {
 
   const handleIntervalChange = (event) => {
     setInputInterval(event.target.value);
+
+    // --- FIX: Close Scanner when timeframe changes ---
+    // This prevents showing stale results from the previous timeframe
+    setShowScanner(false);
   };
 
   const handleAutoUpdateToggle = (event) => {
