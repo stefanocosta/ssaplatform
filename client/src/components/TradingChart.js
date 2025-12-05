@@ -181,11 +181,18 @@ const TradingChart = ({
     };
 
     // ================================================================== //
-    // FETCH DATA
+    // FETCH DATA - MODIFIED FOR SILENT UPDATES
     // ================================================================== //
-    const fetchData = async () => {
+    const fetchData = async (isUpdate = false) => {
         if (!chartRef.current) return;
-        setLoading(true); setError(null);
+        
+        // ONLY set loading to true if this is the initial load.
+        // If it's an update (background refresh), we skip this to prevent "flashing"
+        if (!isUpdate) {
+            setLoading(true); 
+            setError(null);
+        }
+
         try {
             const data = await getChartData(symbol, interval, lValue, useAdaptiveL);
             lastDataRef.current = data;
@@ -247,15 +254,24 @@ const TradingChart = ({
                 }
 
                 updateMarkers();
-                handleResetView();
+                
+                // ONLY reset the view on initial load.
+                // If it's an update, we want to keep the user's current zoom/scroll position.
+                if (!isUpdate) {
+                    handleResetView();
+                }
+
             } else { setError("Invalid data structure."); }
-        } catch (e) { console.error(e); setError(e.message); } finally { setLoading(false); }
+        } catch (e) { console.error(e); setError(e.message); } finally { 
+            if (!isUpdate) setLoading(false); 
+        }
     };
 
     // ================================================================== //
     // CHART SETUP
     // ================================================================== //
     useEffect(() => {
+        // Initial Load (isUpdate = false)
         setLoading(true);
         const container = chartContainerRef.current;
         if (!container) return;
@@ -268,7 +284,7 @@ const TradingChart = ({
                 timeScale: { timeVisible: true, secondsVisible: interval.includes('min'), borderColor: '#485158', rightOffset: 50 },
                 rightPriceScale: { 
                     borderColor: '#485158',
-                    mode: PriceScaleMode.Logarithmic // <--- HARDCODED LOG SCALE
+                    mode: PriceScaleMode.Logarithmic 
                 },
                 width: container.clientWidth,
                 height: container.clientHeight,
@@ -307,7 +323,7 @@ const TradingChart = ({
             });
             resizeObserver.current.observe(container);
 
-            const fetchDelay = setTimeout(() => { if (chartRef.current) { setChartReady(true); fetchData(); } }, 50);
+            const fetchDelay = setTimeout(() => { if (chartRef.current) { setChartReady(true); fetchData(false); } }, 50);
 
             return () => {
                 clearTimeout(fetchDelay);
@@ -336,18 +352,9 @@ const TradingChart = ({
 
         const runPeriodicRefresh = async () => {
             setCountdown(60);
-            try {
-                const data = await getChartData(symbol, interval, lValue, useAdaptiveL);
-                if (data && data.ohlc) {
-                    lastDataRef.current = data;
-                    const nOhlc = data.ohlc.map(d => ({...d, time: normalizeTimestamp(d.time)})).sort((a,b)=>a.time-b.time);
-                    if (seriesRefs.current.mainSeries) {
-                        seriesRefs.current.mainSeries.setData(internalChartType === 'line' ? nOhlc.map(d => ({time: d.time, value: d.close})) : nOhlc);
-                        if (currentCandleRef.current && internalChartType === 'candle' && currentCandleRef.current.time >= nOhlc[nOhlc.length-1].time) seriesRefs.current.mainSeries.update(currentCandleRef.current);
-                    }
-                    fetchData();
-                }
-            } catch (e) {}
+            // CALL FETCHDATA IN SILENT MODE (isUpdate = true)
+            // This updates the data without showing the loading spinner or resetting the zoom.
+            await fetchData(true);
         };
 
         const setupAlignedTimer = () => {
