@@ -190,7 +190,7 @@ def repair_aggregates(symbol):
         df = pd.DataFrame(data_list)
         df.set_index('time', inplace=True)
 
-        aggregations = {'5min': '5min', '15min': '15min', '30min': '30min', '1h': '1h'}
+        aggregations = {'5min': '5min', '15min': '15min', '30min': '30min', '1h': '1h', '4h': '4h'}
 
         for interval_name, pandas_rule in aggregations.items():
             ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}

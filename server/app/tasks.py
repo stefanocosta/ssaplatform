@@ -118,7 +118,8 @@ def resample_and_save(symbol):
             '5min': '5min',
             '15min': '15min', 
             '30min': '30min',
-            '1h': '1h'
+            '1h': '1h',
+            '4h': '4h'
         }
 
         for interval_name, pandas_rule in aggregations.items():
