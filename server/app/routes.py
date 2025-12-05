@@ -371,11 +371,22 @@ def scan_market():
             elif is_hotspot_sell and is_noise_sell:
                 signal_type = "SELL"
             
+            # --- Forecast Direction for Scanner ---
+            forecast_dir = "FLAT"
+            try:
+                # Forecast next 20 bars to determine direction
+                f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=20, min_component=1)
+                if len(f_vals) > 0:
+                    forecast_dir = "UP" if f_vals[-1] > f_vals[0] else "DOWN"
+            except Exception:
+                pass
+
             if signal_type:
                 active_signals.append({
                     "symbol": symbol,
                     "type": signal_type,
                     "trend_dir": trend_direction,
+                    "forecast_dir": forecast_dir,
                     "cycle_pct": int(cyc_pos),   
                     "fast_pct": int(fast_pos),   
                     "price": curr_price,

@@ -99,16 +99,17 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gap: '8px' }}>
-                        {/* HEADER ROW */}
+                        {/* HEADER ROW - UPDATED WITH FCST */}
                         <div style={{ 
                             display: 'grid', 
-                            gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.8fr', 
+                            gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.5fr 0.8fr', 
                             padding: '0 10px', fontSize: '0.70rem', color: '#888', fontWeight: 'bold' 
                         }}>
                             <span>ASSET</span>
                             <span style={{textAlign: 'center'}}>TRND</span>
                             <span style={{textAlign: 'center'}}>CYC %</span>
                             <span style={{textAlign: 'center'}}>FAST %</span>
+                            <span style={{textAlign: 'center'}}>FCST</span>
                             <span style={{textAlign: 'right'}}>SIGNAL</span>
                         </div>
 
@@ -120,7 +121,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
                                     onClick={() => handleSignalClick(sig.symbol)}
                                     style={{
                                         display: 'grid', 
-                                        gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.8fr',
+                                        gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.5fr 0.8fr',
                                         alignItems: 'center',
                                         backgroundColor: isActive ? '#404040' : '#2a2a2a', 
                                         border: isActive ? '1px solid #0078d4' : '1px solid transparent',
@@ -160,7 +161,15 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
                                         {sig.fast_pct}%
                                     </div>
 
-                                    {/* COL 5: Signal Badge */}
+                                    {/* COL 5: Forecast Direction (NEW) */}
+                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                        {sig.forecast_dir === 'UP' 
+                                            ? <TrendingUp size={18} color="#26a69a" /> 
+                                            : <TrendingDown size={18} color="#ef5350" />
+                                        }
+                                    </div>
+
+                                    {/* COL 6: Signal Badge */}
                                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                         <div style={{ 
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
