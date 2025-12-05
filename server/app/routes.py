@@ -238,7 +238,7 @@ def scan_market():
     # Loop through ALL tracked assets
     for symbol in TRACKED_ASSETS:
         # 1. Fetch Data from DB (Fast, no API cost)
-        ohlc_data = get_historical_data(symbol, interval, None, limit=300)
+        ohlc_data = get_historical_data(symbol, interval, None, limit=500)
         
         if not ohlc_data or len(ohlc_data) < 30:
             continue
