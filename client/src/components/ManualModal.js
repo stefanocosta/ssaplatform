@@ -4,10 +4,10 @@ import React from 'react';
 
 const ManualModal = ({ onClose }) => {
     return (
-        /* NOTE: The CSS classes 'modal-overlay', 'modal-content', etc., 
-           must exist in LandingPage.css (which is loaded globally or by the parent).
-        */
         <div className="modal-overlay" onClick={onClose}>
+            {/* NOTE: The CSS classes 'modal-overlay', 'modal-content', etc., 
+                must exist in LandingPage.css (which is loaded globally or by the parent).
+            */}
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <button className="modal-close-btn" onClick={onClose}>&times;</button>
                 
@@ -126,7 +126,7 @@ const ManualModal = ({ onClose }) => {
                             <li><strong>Smart Recommendations:</strong> The engine generates text advice based on the interaction of components:
                                 <ul>
                                     <li>It identifies if a trade is <strong>Trend-Following</strong> (Safe) or <strong>Counter-Trend</strong> (Risky).</li>
-                                    <li><strong>Profit Taking:</strong> It monitors the <strong>Fast Cycle</strong>. If you are in a Long position and the Fast Cycle hits >80% (Overbought), it suggests taking profits even if the main trend is still up.</li>
+                                    <li><strong>Profit Taking:</strong> It monitors the <strong>Fast Cycle</strong>. If you are in a Long position and the Fast Cycle hits &gt;80% (Overbought), it suggests taking profits even if the main trend is still up.</li>
                                 </ul>
                             </li>
                         </ul>

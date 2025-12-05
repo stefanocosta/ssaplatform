@@ -207,7 +207,7 @@ function Platform() {
             onClick={() => setShowAnalysis(!showAnalysis)}
             style={{
                 display: 'flex', alignItems: 'center', gap: '5px',
-                background: '#2a2a2a', color: '#d1d4dc', border: '1px solid #444',
+                background: '#e600adff', color: '#d1d4dc', border: '1px solid #444',
                 borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
                 fontSize: '0.9rem',
                 marginLeft: 'auto', // Pushes this and subsequent elements to the right
@@ -216,7 +216,7 @@ function Platform() {
             title="Deep Analysis"
           >
             <Activity size={16} />
-            Analysis
+            DA
           </button>
 
           {/* --- SCANNER BUTTON --- */}
