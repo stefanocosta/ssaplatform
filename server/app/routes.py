@@ -121,71 +121,63 @@ def user_info():
 
 # --- HELPER FUNCTION: CYCLE POSITION ---
 def calculate_cycle_position(component_values, component_type='cyclic'):
-    """Calculate cycle position (0-100%) and direction for a component"""
-    if len(component_values) < 10:
-        return 50, 'flat', None, None
+    """
+    Calculate cycle position (0-100%) based on Average Peaks and Valleys.
+    0% = Average Valley (Support)
+    100% = Average Peak (Resistance)
+    Values can exceed 100% or drop below 0% (Overbought/Oversold).
+    """
+    # Safety check for empty or short data
+    if len(component_values) < 5:
+        return 50, 'flat', 1.0, -1.0
     
     current_value = component_values[-1]
     
-    # Calculate support and resistance levels
-    avg_resistance = None
-    avg_support = None
+    # 1. Identify Peaks (Resistance) -> Local Maxima > 0
+    # We use a simple height=0 to capture all positive local maxima
+    peaks_indices, _ = find_peaks(component_values, height=0)
     
-    # Find peaks (resistance levels)
-    positive_mask = component_values > 0
-    if np.any(positive_mask):
-        positive_values = np.where(positive_mask, component_values, 0)
-        # Use slightly different percentile for noise vs cyclic if needed
-        percentile_threshold = 60 
-        
-        peaks_indices, _ = find_peaks(positive_values, 
-                                    height=np.percentile(positive_values[positive_mask], percentile_threshold),
-                                    distance=max(1, len(component_values)//30))
-        if len(peaks_indices) > 0:
-            avg_resistance = np.mean(component_values[peaks_indices])
+    if len(peaks_indices) > 0:
+        avg_resistance = np.mean(component_values[peaks_indices])
+    else:
+        # Fallback: If no distinct peaks found, use the global Max of the data
+        # (Ensure it is at least slightly positive to avoid division errors)
+        avg_resistance = max(np.max(component_values), 0.0001)
+
+    # 2. Identify Valleys (Support) -> Local Minima < 0
+    # We invert the data to find peaks, which corresponds to valleys in original data
+    valleys_indices, _ = find_peaks(-component_values, height=0)
     
-    # Find valleys (support levels)
-    negative_mask = component_values < 0
-    if np.any(negative_mask):
-        negative_values = np.where(negative_mask, -component_values, 0)
-        percentile_threshold = 60
-        
-        valleys_indices, _ = find_peaks(negative_values,
-                                      height=np.percentile(negative_values[negative_mask], percentile_threshold),
-                                      distance=max(1, len(component_values)//30))
-        if len(valleys_indices) > 0:
-            # Note: component values are negative, so mean is negative
-            avg_support = np.mean(component_values[valleys_indices])
+    if len(valleys_indices) > 0:
+        avg_support = np.mean(component_values[valleys_indices])
+    else:
+        # Fallback: If no distinct valleys found, use the global Min of the data
+        # (Ensure it is at least slightly negative)
+        avg_support = min(np.min(component_values), -0.0001)
     
-    # Calculate cycle position (0-100%)
-    cycle_position = 50
-    if avg_resistance is not None and avg_support is not None:
-        cycle_range = avg_resistance - avg_support
-        if cycle_range > 0:
-            # Map position: Support = 0%, Resistance = 100%
-            cycle_position = ((current_value - avg_support) / cycle_range) * 100
-            # Allow >100 or <0 to show extreme overbought/oversold
-            cycle_position = round(cycle_position, 1)
-            
-    elif avg_resistance is not None:
-        if current_value >= avg_resistance * 0.8: cycle_position = 85
-        elif current_value <= 0: cycle_position = 15
-    elif avg_support is not None:
-        if current_value <= avg_support * 0.8: cycle_position = 15
-        elif current_value >= 0: cycle_position = 85
+    # 3. Calculate Range
+    cycle_range = avg_resistance - avg_support
     
-    # Calculate direction
+    # Safety: Avoid division by zero if flatline
+    if cycle_range == 0:
+        cycle_range = 1.0
+
+    # 4. Calculate Percentage Position
+    # Formula: (Value - Bottom) / (Top - Bottom) * 100
+    cycle_position = ((current_value - avg_support) / cycle_range) * 100
+    
+    # Round for display
+    cycle_position = int(round(cycle_position))
+    
+    # 5. Determine Direction (Slope of last few points)
     direction = 'flat'
-    if len(component_values) >= 5:
-        recent_values = component_values[-5:]
-        trend_slope = np.polyfit(range(len(recent_values)), recent_values, 1)[0]
-        if trend_slope > 0.0001: direction = 'rising'
-        elif trend_slope < -0.0001: direction = 'falling'
-        else:
-            if len(component_values) >= 3:
-                recent_change = component_values[-1] - component_values[-3]
-                if recent_change > 0.001: direction = 'rising'
-                elif recent_change < -0.001: direction = 'falling'
+    # Look at the last 3 points to determine immediate direction
+    if len(component_values) >= 3:
+        slope = component_values[-1] - component_values[-2]
+        if slope > 0: 
+            direction = 'rising'
+        elif slope < 0: 
+            direction = 'falling'
     
     return cycle_position, direction, avg_resistance, avg_support
 
