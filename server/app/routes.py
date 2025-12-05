@@ -390,3 +390,126 @@ def scan_market():
             continue
 
     return jsonify(active_signals)
+
+@bp.route('/analyze', methods=['GET'])
+@jwt_required()
+def analyze_asset():
+    symbol = request.args.get('symbol')
+    interval = request.args.get('interval', '1day')
+    use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
+    try:
+        l_param = int(request.args.get('l', 30))
+    except ValueError:
+        l_param = 30
+
+    if not symbol:
+        return jsonify({"error": "Symbol required"}), 400
+
+    api_key = current_app.config['TWELVE_DATA_API_KEY']
+    # Fetch slightly more data to ensure we catch recent signals
+    ohlc_data = get_historical_data(symbol, interval, api_key, limit=300)
+    if not ohlc_data or len(ohlc_data) < 50:
+        return jsonify({"error": "Insufficient data"}), 400
+
+    df = pd.DataFrame(ohlc_data)
+    
+    close_prices = df['close'].values.flatten()
+    
+    N = len(close_prices)
+    if use_adaptive_l:
+        L = 39 
+    else:
+        L = min(l_param, N // 2)
+
+    try:
+        components = ssa_service.ssa_decomposition(close_prices, L)
+        
+        trend = components[0]
+        cyclic = components[1:min(3, L)].sum(axis=0)
+        noise = components[min(3, L):min(6, L)].sum(axis=0)
+        reconstructed = trend + cyclic
+
+        # --- 1. CURRENT POSITIONS ---
+        cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
+        fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
+        
+        curr_trend_val = trend[-1]
+        prev_trend_val = trend[-2]
+        trend_dir = "Bullish" if curr_trend_val > prev_trend_val else "Bearish"
+
+        # --- 2. FIND LAST SIGNAL (STATUS) ---
+        # We look back 60 bars to see what the "Active" trade is
+        last_signal = "NEUTRAL"
+        days_since_signal = -1
+        
+        # Iterate backwards from current bar
+        for i in range(N-1, N-60, -1):
+            c_price = close_prices[i]
+            c_trend = trend[i]
+            c_recon = reconstructed[i]
+            c_noise = noise[i]
+            p_noise = noise[i-1]
+            
+            # Re-run signal logic for this past bar
+            is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
+            is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
+            is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
+            is_noise_sell = (c_noise > 0) and (c_noise <= p_noise)
+            
+            if is_hot_buy and is_noise_buy:
+                last_signal = "LONG"
+                days_since_signal = (N - 1) - i
+                break
+            elif is_hot_sell and is_noise_sell:
+                last_signal = "SHORT"
+                days_since_signal = (N - 1) - i
+                break
+
+        # --- 3. GENERATE RECOMMENDATION ---
+        recommendation = []
+        
+        # Cycle Context
+        if cyc_pos < 10:
+            recommendation.append("The Cyclic component is extremely oversold (Bottoming).")
+        elif cyc_pos > 90:
+            recommendation.append("The Cyclic component is extremely overbought (Topping).")
+        
+        # Trend vs Signal Context
+        if last_signal == "LONG":
+            if trend_dir == "Bullish":
+                recommendation.append(f"Currently in a TREND-FOLLOWING LONG (triggered {days_since_signal} bars ago). The trend supports this position.")
+            else:
+                recommendation.append(f"Currently in a COUNTER-TREND LONG (triggered {days_since_signal} bars ago). Be cautious as the main trend is down.")
+        elif last_signal == "SHORT":
+            if trend_dir == "Bearish":
+                recommendation.append(f"Currently in a TREND-FOLLOWING SHORT (triggered {days_since_signal} bars ago). The trend supports this position.")
+            else:
+                recommendation.append(f"Currently in a COUNTER-TREND SHORT (triggered {days_since_signal} bars ago). Be cautious as the main trend is up.")
+        else:
+            recommendation.append("No clear entry signals in the recent period.")
+
+        # Immediate Action Advice
+        if fast_pos < 5 and cyc_pos < 20:
+            recommendation.append("Strong BUY conditions are developing. Watch for a noise reversal.")
+        elif fast_pos > 95 and cyc_pos > 80:
+            recommendation.append("Strong SELL conditions are developing. Watch for a noise reversal.")
+        elif last_signal == "LONG" and trend_dir == "Bearish" and fast_pos > 80:
+             recommendation.append("Consider taking profits on the counter-trend Long as Fast cycle is peaking.")
+        elif last_signal == "SHORT" and trend_dir == "Bullish" and fast_pos < 20:
+             recommendation.append("Consider taking profits on the counter-trend Short as Fast cycle is bottoming.")
+
+        response = {
+            "symbol": symbol,
+            "trend": trend_dir,
+            "status": last_signal, # LONG / SHORT / NEUTRAL
+            "bars_ago": days_since_signal,
+            "cycle_pct": int(cyc_pos),
+            "fast_pct": int(fast_pos),
+            "recommendation": " ".join(recommendation)
+        }
+        
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"Analysis error: {e}")
+        return jsonify({"error": str(e)}), 500

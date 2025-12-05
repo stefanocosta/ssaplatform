@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; 
-import { Radar } from 'lucide-react'; // Import Icon for Scan button
+import { Radar, Activity } from 'lucide-react'; // Added Activity icon
 import TradingChart from './components/TradingChart';
 import AuthForm from './components/AuthForm'; 
 import LandingPage from './components/LandingPage'; 
-import ScannerModal from './components/ScannerModal'; // Import Scanner Component
+import ScannerModal from './components/ScannerModal'; 
+import AnalysisModal from './components/AnalysisModal'; // Import Analysis Modal
 import './App.css';
 
 function Platform() {
@@ -22,8 +23,9 @@ function Platform() {
   const [lookupCount, setLookupCount] = useState(0);
   const [finalSymbol, setFinalSymbol] = useState('BTC/USD');
 
-  // --- NEW STATE FOR SCANNER ---
+  // --- SCANNER & ANALYSIS STATE ---
   const [showScanner, setShowScanner] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false); // New State
   
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
@@ -55,9 +57,9 @@ function Platform() {
   const handleIntervalChange = (event) => {
     setInputInterval(event.target.value);
 
-    // --- FIX: Close Scanner when timeframe changes ---
-    // This prevents showing stale results from the previous timeframe
+    // --- FIX: Close Scanner/Analysis when timeframe changes ---
     setShowScanner(false);
+    setShowAnalysis(false);
   };
 
   const handleAutoUpdateToggle = (event) => {
@@ -200,15 +202,32 @@ function Platform() {
             </label>
           </span>
 
-          {/* --- NEW SCANNER BUTTON --- */}
+          {/* --- ANALYSIS BUTTON --- */}
+          <button
+            onClick={() => setShowAnalysis(!showAnalysis)}
+            style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                background: '#2a2a2a', color: '#d1d4dc', border: '1px solid #444',
+                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
+                fontSize: '0.9rem',
+                marginLeft: 'auto', // Pushes this and subsequent elements to the right
+                marginRight: '10px'
+            }}
+            title="Deep Analysis"
+          >
+            <Activity size={16} />
+            Analysis
+          </button>
+
+          {/* --- SCANNER BUTTON --- */}
           <button
             onClick={() => setShowScanner(true)}
             style={{
                 display: 'flex', alignItems: 'center', gap: '5px',
                 background: '#0078d4', color: 'white', border: 'none',
                 borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
-                fontSize: '0.9rem',
-                marginLeft: 'auto' // Pushes to the right if space allows
+                fontSize: '0.9rem'
+                // Removed marginLeft: auto, so it sits right next to Analysis
             }}
             title="Scan market for signals"
           >
@@ -250,9 +269,17 @@ function Platform() {
                 interval={inputInterval} 
                 onClose={() => setShowScanner(false)}
                 onSelectAsset={(symbol) => {
-                    // Updating inputSymbol triggers the useEffect that sets finalSymbol
                     setInputSymbol(symbol);
                 }}
+            />
+        )}
+        
+        {/* --- ANALYSIS MODAL --- */}
+        {showAnalysis && (
+            <AnalysisModal
+                symbol={finalSymbol}
+                interval={inputInterval}
+                onClose={() => setShowAnalysis(false)}
             />
         )}
 
