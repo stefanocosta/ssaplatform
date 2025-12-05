@@ -310,6 +310,7 @@ def get_chart_data():
 @jwt_required()
 def scan_market():
     interval = request.args.get('interval', '1day')
+    # Default parameters matching your frontend defaults
     use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
     try:
         l_param = int(request.args.get('l', 30))
@@ -318,18 +319,19 @@ def scan_market():
 
     active_signals = []
 
+    # Loop through ALL tracked assets
     for symbol in TRACKED_ASSETS:
-        # 1. Fetch Data
+        # 1. Fetch Data from DB (Fast, no API cost)
         ohlc_data = get_historical_data(symbol, interval, None, limit=500)
         
         if not ohlc_data or len(ohlc_data) < 30:
             continue
 
-        # 2. Prepare Data
+        # 2. Prepare Data for SSA
         df = pd.DataFrame(ohlc_data)
         close_prices = df['close'].values.flatten()
         
-        # 3. Perform SSA
+        # 3. Perform SSA (Identical to chart-data logic)
         N = len(close_prices)
         if use_adaptive_l:
             L = 39 
@@ -339,6 +341,7 @@ def scan_market():
         try:
             components = ssa_service.ssa_decomposition(close_prices, L)
             
+            # Extract components
             trend = components[0]
             cyclic = components[1:min(3, L)].sum(axis=0)
             noise = components[min(3, L):min(6, L)].sum(axis=0)
@@ -346,29 +349,30 @@ def scan_market():
             reconstructed = trend + cyclic
             
             # 4. CALCULATE PERCENTAGE POSITIONS (0% = Valley, 100% = Peak)
-            # We use the helper function already defined in this file
             cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
             fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
 
             # 5. SIGNAL LOGIC
             curr_price = close_prices[-1]
             curr_trend = trend[-1]
-            prev_trend = trend[-2]
+            prev_trend = trend[-2] # Previous trend value
 
             curr_recon = reconstructed[-1]
             curr_noise = noise[-1]
             prev_noise = noise[-2]
-            
+
+            # --- NEW: Calculate Trend Direction ---
             trend_direction = "UP" if curr_trend > prev_trend else "DOWN"
 
             # Hotspot Logic
             is_hotspot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
             is_hotspot_sell = (curr_recon > curr_trend) and (curr_price > curr_recon)
             
-            # Noise Logic
+            # Noise Logic (Turning Point)
             is_noise_buy = (curr_noise < 0) and (curr_noise >= prev_noise)
             is_noise_sell = (curr_noise > 0) and (curr_noise <= prev_noise)
             
+            # Combined Signal
             signal_type = None
             if is_hotspot_buy and is_noise_buy:
                 signal_type = "BUY"
@@ -380,8 +384,8 @@ def scan_market():
                     "symbol": symbol,
                     "type": signal_type,
                     "trend_dir": trend_direction,
-                    "cycle_pct": int(cyc_pos),   # <--- Now sending Integer Percentage
-                    "fast_pct": int(fast_pos),   # <--- Now sending Integer Percentage
+                    "cycle_pct": int(cyc_pos),   
+                    "fast_pct": int(fast_pos),   
                     "price": curr_price,
                     "time": ohlc_data[-1]['time']
                 })
@@ -406,13 +410,12 @@ def analyze_asset():
         return jsonify({"error": "Symbol required"}), 400
 
     api_key = current_app.config['TWELVE_DATA_API_KEY']
-    # Fetch slightly more data to ensure we catch recent signals
     ohlc_data = get_historical_data(symbol, interval, api_key, limit=300)
+    
     if not ohlc_data or len(ohlc_data) < 50:
         return jsonify({"error": "Insufficient data"}), 400
 
     df = pd.DataFrame(ohlc_data)
-    
     close_prices = df['close'].values.flatten()
     
     N = len(close_prices)
@@ -429,20 +432,25 @@ def analyze_asset():
         noise = components[min(3, L):min(6, L)].sum(axis=0)
         reconstructed = trend + cyclic
 
-        # --- 1. CURRENT POSITIONS ---
+        # --- 1. CALCULATE POSITIONS ---
         cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
         fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
         
+        # Trend Direction
         curr_trend_val = trend[-1]
         prev_trend_val = trend[-2]
         trend_dir = "Bullish" if curr_trend_val > prev_trend_val else "Bearish"
 
-        # --- 2. FIND LAST SIGNAL (STATUS) ---
-        # We look back 60 bars to see what the "Active" trade is
+        # Fast Cycle Direction
+        curr_noise = noise[-1]
+        prev_noise = noise[-2]
+        fast_rising = curr_noise > prev_noise
+
+        # --- 2. FIND CURRENT POSITION (Last Signal) ---
         last_signal = "NEUTRAL"
         days_since_signal = -1
         
-        # Iterate backwards from current bar
+        # Look back 60 bars for the most recent valid signal
         for i in range(N-1, N-60, -1):
             c_price = close_prices[i]
             c_trend = trend[i]
@@ -450,7 +458,6 @@ def analyze_asset():
             c_noise = noise[i]
             p_noise = noise[i-1]
             
-            # Re-run signal logic for this past bar
             is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
             is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
             is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
@@ -465,47 +472,69 @@ def analyze_asset():
                 days_since_signal = (N - 1) - i
                 break
 
-        # --- 3. GENERATE RECOMMENDATION ---
-        recommendation = []
-        
-        # Cycle Context
-        if cyc_pos < 10:
-            recommendation.append("The Cyclic component is extremely oversold (Bottoming).")
-        elif cyc_pos > 90:
-            recommendation.append("The Cyclic component is extremely overbought (Topping).")
-        
-        # Trend vs Signal Context
-        if last_signal == "LONG":
-            if trend_dir == "Bullish":
-                recommendation.append(f"Currently in a TREND-FOLLOWING LONG (triggered {days_since_signal} bars ago). The trend supports this position.")
-            else:
-                recommendation.append(f"Currently in a COUNTER-TREND LONG (triggered {days_since_signal} bars ago). Be cautious as the main trend is down.")
-        elif last_signal == "SHORT":
-            if trend_dir == "Bearish":
-                recommendation.append(f"Currently in a TREND-FOLLOWING SHORT (triggered {days_since_signal} bars ago). The trend supports this position.")
-            else:
-                recommendation.append(f"Currently in a COUNTER-TREND SHORT (triggered {days_since_signal} bars ago). Be cautious as the main trend is up.")
-        else:
-            recommendation.append("No clear entry signals in the recent period.")
+        # --- 3. BUILD FRIENDLY RECOMMENDATION ---
+        recs = []
 
-        # Immediate Action Advice
-        if fast_pos < 5 and cyc_pos < 20:
-            recommendation.append("Strong BUY conditions are developing. Watch for a noise reversal.")
-        elif fast_pos > 95 and cyc_pos > 80:
-            recommendation.append("Strong SELL conditions are developing. Watch for a noise reversal.")
-        elif last_signal == "LONG" and trend_dir == "Bearish" and fast_pos > 80:
-             recommendation.append("Consider taking profits on the counter-trend Long as Fast cycle is peaking.")
-        elif last_signal == "SHORT" and trend_dir == "Bullish" and fast_pos < 20:
-             recommendation.append("Consider taking profits on the counter-trend Short as Fast cycle is bottoming.")
+        # A. FAST CYCLE STATUS (Always first)
+        fast_status_str = "Rising ↗️" if fast_rising else "Falling ↘️"
+        recs.append(f"The Fast Cycle is currently {fast_status_str} (at {int(fast_pos)}%).")
+
+        # B. SLOW CYCLE CONTEXT
+        if cyc_pos < 10:
+            recs.append("The Cyclic component is extremely oversold (Bottoming).")
+        elif cyc_pos > 90:
+            recs.append("The Cyclic component is extremely overbought (Peaking).")
+
+        # C. POSITION NARRATIVE
+        if last_signal == "LONG":
+            base_msg = f"Currently in a LONG position (triggered {days_since_signal} bars ago)."
+            if trend_dir == "Bullish":
+                recs.append(f"{base_msg} This is a TREND-FOLLOWING trade, as the main trend is up.")
+            else:
+                recs.append(f"{base_msg} This is a COUNTER-TREND trade. Be cautious as the main trend is down.")
+
+            # Management Logic (Long)
+            if fast_pos > 80:
+                recs.append("Take note: The Fast Cycle is now Overbought (>80%). Consider taking profits here.")
+                if cyc_pos > 50:
+                    recs.append("Watch out for a possible SHORT entry if the Fast Cycle turns down.")
+            elif not fast_rising and curr_noise > 0:
+                 recs.append("Alert: The Fast Cycle has started falling while positive. This is often a profit-taking zone.")
+
+        elif last_signal == "SHORT":
+            base_msg = f"Currently in a SHORT position (triggered {days_since_signal} bars ago)."
+            if trend_dir == "Bearish":
+                recs.append(f"{base_msg} This is a TREND-FOLLOWING trade, as the main trend is down.")
+            else:
+                recs.append(f"{base_msg} This is a COUNTER-TREND trade. Be cautious as the main trend is up.")
+
+            # Management Logic (Short)
+            if fast_pos < 20:
+                recs.append("Take note: The Fast Cycle is now Oversold (<20%). Consider taking profits here.")
+                if cyc_pos < 50:
+                    recs.append("Watch out for a possible LONG entry if the Fast Cycle turns up.")
+            elif fast_rising and curr_noise < 0:
+                 recs.append("Alert: The Fast Cycle has started rising while negative. This is often a profit-taking zone.")
+        
+        else:
+            recs.append("No active positions were triggered in the last 60 bars.")
+
+        # D. NEUTRAL STATE ADVICE
+        if last_signal == "NEUTRAL" or days_since_signal > 15:
+            if fast_rising and fast_pos < 20 and cyc_pos < 20:
+                recs.append("Setup developing: The market is Oversold. Watch for a Buy trigger soon.")
+            elif not fast_rising and fast_pos > 80 and cyc_pos > 80:
+                recs.append("Setup developing: The market is Overbought. Watch for a Sell trigger soon.")
 
         response = {
             "symbol": symbol,
             "trend": trend_dir,
-            "status": last_signal, # LONG / SHORT / NEUTRAL
+            "status": last_signal, 
             "bars_ago": days_since_signal,
             "cycle_pct": int(cyc_pos),
             "fast_pct": int(fast_pos),
-            "recommendation": " ".join(recommendation)
+            # Using newlines so the frontend 'pre-line' style renders them nicely
+            "recommendation": "\n".join(recs)
         }
         
         return jsonify(response)

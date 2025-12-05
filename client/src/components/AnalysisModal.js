@@ -140,14 +140,37 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0078d4', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>
                                 <FileText size={16} /> Recommendation
                             </div>
-                            <p style={{ margin: 0, color: '#d1d4dc', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                            <p style={{ 
+                                margin: 0, 
+                                color: '#d1d4dc', 
+                                fontSize: '0.85rem', 
+                                lineHeight: '1.4',
+                                whiteSpace: 'pre-line' /* Added to respect newlines from backend */
+                            }}>
                                 {data.recommendation}
                             </p>
                         </div>
-
                     </div>
                 ) : null}
             </div>
+            
+            {/* DISCLAIMER FOOTER */}
+            {!loading && data && (
+                <div style={{ 
+                    padding: '10px 15px', 
+                    background: '#252525', 
+                    borderTop: '1px solid #333',
+                    borderBottomLeftRadius: '12px',
+                    borderBottomRightRadius: '12px'
+                }}>
+                    <p style={{ margin: 0, color: '#858282ff', fontSize: '0.65rem', lineHeight: '1.3', textAlign: 'justify' }}>
+                        <strong>Disclaimer:</strong> This analysis is mathematically generated based on statistical algorithms. 
+                        It describes the current technical condition of the asset and is <em>not</em> a recommendation to trade. 
+                        Past performance does not guarantee future results. Use at your own risk.
+                    </p>
+                </div>
+            )}
+            
             <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } } .animate-spin { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
         </div>
     );

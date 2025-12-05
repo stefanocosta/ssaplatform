@@ -107,15 +107,33 @@ const ManualModal = ({ onClose }) => {
                                     <li><strong>100%</strong> = Historical Resistance (Peak).</li>
                                     <li><span style={{color: '#00c853'}}><strong>Green (&lt; 20%):</strong></span> The cycle is bottoming out (Oversold).</li>
                                     <li><span style={{color: '#ff3d00'}}><strong>Red (&gt; 80%):</strong></span> The cycle is topping out (Overbought).</li>
-                                    <li><em>Note: Values can exceed 100% (strong overbought) or drop below 0% (strong oversold).</em></li>
+                                    <li><em>Note: Values can exceed 100% (strong breakout) or drop below 0% (strong breakdown).</em></li>
                                 </ul>
                             </li>
                             <li><strong>Signal Column:</strong> Only appears if a valid "Pinpoint Signal" (Section 4) is detected on the current bar.</li>
                         </ul>
                     </section>
 
+                    {/* --- NEW SECTION: DEEP ANALYSIS --- */}
                     <section>
-                        <h3>7. Controls & Timeframes</h3>
+                        <h3>7. Deep Analysis Tool</h3>
+                        <p>
+                            The <strong>Analysis</strong> button (next to Scan) performs a real-time historical check on the currently viewed asset to provide context beyond the current candle.
+                        </p>
+                        <ul>
+                            <li><strong>Trade Status:</strong> Checks the last 60 bars to identify if there is an active "LONG" or "SHORT" signal currently in play.</li>
+                            <li><strong>Signal Age:</strong> Displays exactly how many bars ago the signal was triggered, helping you distinguish between fresh entries and mature trends.</li>
+                            <li><strong>Smart Recommendations:</strong> The engine generates text advice based on the interaction of components:
+                                <ul>
+                                    <li>It identifies if a trade is <strong>Trend-Following</strong> (Safe) or <strong>Counter-Trend</strong> (Risky).</li>
+                                    <li><strong>Profit Taking:</strong> It monitors the <strong>Fast Cycle</strong>. If you are in a Long position and the Fast Cycle hits >80% (Overbought), it suggests taking profits even if the main trend is still up.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h3>8. Controls & Timeframes</h3>
                         <ul>
                             <li><strong>Auto Checkbox:</strong> When enabled, the platform connects to our server to pull 1-minute updates, refreshing the calculations in real-time.</li>
                             <li><strong>Investors:</strong> Focus on <strong>Weekly</strong> and <strong>Daily</strong> charts for macro-cycle positioning.</li>
@@ -123,9 +141,9 @@ const ManualModal = ({ onClose }) => {
                         </ul>
                     </section>
 
-                    {/* --- NEW SECTION: DISCLAIMER --- */}
+                    {/* --- DISCLAIMER --- */}
                     <section style={{marginTop: '30px', borderTop: '1px solid #444', paddingTop: '20px', opacity: 0.8}}>
-                        <h3>8. Risk Disclosure & Disclaimer</h3>
+                        <h3>9. Risk Disclosure & Disclaimer</h3>
                         <p style={{fontSize: '0.85rem', lineHeight: '1.4'}}>
                             The SSA Trading Platform is an advanced analytical tool designed to identify potential mathematical entry and exit zones based on historical data analysis. It does not constitute financial, investment, or trading advice. Trading in financial markets involves a substantial risk of loss and is not suitable for every investor. All analysis, chart patterns, and signals provided are for educational and informational purposes only. Past performance is no guarantee of future results. Users are solely responsible for their own trading decisions.
                         </p>
