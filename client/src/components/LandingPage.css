@@ -1,11 +1,10 @@
-/* client/src/components/LandingPage.css */
 :root {
-    --bg-dark: #121212; /* Matching your platform's dark background */
+    --bg-dark: #121212;
     --bg-card: #1e1e1e;
     --text-primary: #ffffff;
     --text-secondary: #b3b3b3;
-    --accent-blue: #1c86ff; /* Matching your platform's blue line */
-    --accent-green: #00c853; /* Matching your signals */
+    --accent-blue: #1c86ff;
+    --accent-green: #00c853;
 }
 
 .landing-container {
@@ -50,11 +49,6 @@
     font-size: 0.9rem;
 }
 
-.nav-item.disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 .nav-btn-cta {
     background-color: var(--accent-blue);
     color: white;
@@ -72,96 +66,136 @@
 /* --- Hero Section --- */
 .hero-section {
     position: relative;
-    /* CHANGED: Reduced from 80vh to 55vh to show content below */
-    height: 55vh; 
-    min-height: 400px; /* Prevents it from getting too squashed on small screens */
+    height: 60vh; 
+    min-height: 500px;
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
     margin-top: 60px;
-    
-    /* --- BACKGROUND IMAGE INSTRUCTIONS --- */
-    /* 1. Put your platform screenshot (e.g., platform_bg.jpg) into client/public/ */
-    /* 2. Uncomment the line below: */
-    /* background-image: url('/platform_bg.jpg'); */
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
 }
 
-/* Dark overlay to make text readable on top of the image */
 .hero-overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(135deg, rgba(18,18,18,0.9) 0%, rgba(18,18,18,0.7) 100%);
+    background: linear-gradient(135deg, rgba(18,18,18,0.95) 0%, rgba(18,18,18,0.7) 100%);
     z-index: 1;
 }
 
 .hero-content {
     position: relative;
     z-index: 2;
-    max-width: 800px;
+    max-width: 900px;
     padding: 20px;
 }
 
 .hero-content h1 {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-    line-height: 1.2;
+    font-size: 3.5rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.1;
+    font-weight: 800;
+}
+
+/* FIXED GRADIENT TEXT */
+.text-gradient {
+    background: linear-gradient(90deg, #1c86ff, #00c853);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
 }
 
 .hero-subtext {
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     color: var(--text-secondary);
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
+    line-height: 1.6;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .hero-cta-button {
     display: inline-block;
     background: linear-gradient(90deg, var(--accent-blue), #00c853);
     color: white;
-    padding: 15px 30px;
-    font-size: 1.1rem;
-    border-radius: 30px;
+    padding: 16px 36px;
+    font-size: 1.2rem;
+    border-radius: 50px;
     text-decoration: none;
     font-weight: bold;
-    box-shadow: 0 4px 15px rgba(28, 134, 255, 0.3);
-    transition: transform 0.2s;
+    box-shadow: 0 4px 20px rgba(0, 200, 83, 0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .hero-cta-button:hover {
     transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(0, 200, 83, 0.6);
 }
 
-/* --- Features Section --- */
+/* --- Impact Section --- */
+.impact-section {
+    background-color: #0f0f0f;
+    padding: 60px 20px;
+    text-align: center;
+    border-bottom: 1px solid #222;
+}
+
+.impact-section h2 {
+    font-size: 2rem;
+    color: #fff;
+    margin-bottom: 20px;
+}
+
+.impact-section p {
+    color: #bbb;
+    font-size: 1.1rem;
+    max-width: 800px;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* --- Features Section (Grid) --- */
 .features-section {
-    display: flex;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
     gap: 30px;
-    padding: 40px 20px;
+    padding: 60px 40px;
     background-color: var(--bg-dark);
-    flex-wrap: wrap;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .feature-card {
     background-color: var(--bg-card);
-    padding: 25px;
-    border-radius: 12px;
-    max-width: 500px;
-    flex: 1;
+    padding: 30px;
+    border-radius: 16px;
     border: 1px solid #333;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    transition: transform 0.2s;
 }
 
-.feature-card h2 {
+.feature-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--accent-blue);
+}
+
+.feature-card h3 {
     color: var(--accent-blue);
     margin-top: 0;
+    font-size: 1.4rem;
+    margin-bottom: 15px;
 }
 
 .feature-card p {
     color: var(--text-secondary);
     line-height: 1.6;
+    font-size: 1rem;
 }
 
 /* --- Footer & Disclaimer --- */
@@ -194,63 +228,7 @@
 }
 
 /* ========================================= */
-/* MOBILE FIX: STANDARD FLOW LAYOUT          */
-/* ========================================= */
-
-@media (max-width: 768px) {
-    .hero-section {
-        /* 1. SWITCH TO BLOCK LAYOUT */
-        /* This forces the box to grow with the text inside it, 100% guaranteed */
-        display: block !important; 
-        
-        /* 2. Reset Heights */
-        height: auto !important;
-        min-height: auto !important; /* Remove strict constraints */
-        
-        /* 3. Add Spacing */
-        /* Top padding pushes text below the fixed Navbar */
-        padding-top: 140px !important; 
-        /* Bottom padding ensures a gap before the Features section starts */
-        padding-bottom: 80px !important; 
-        
-        margin-top: 0 !important;
-        text-align: center; /* Keep text centered horizontally */
-    }
-
-    .hero-content {
-        width: 100%;
-        padding: 0 20px;
-        box-sizing: border-box;
-        /* Remove any positioning that might take it out of flow */
-        position: static; 
-    }
-
-    .hero-content h1 {
-        font-size: 2rem;
-        line-height: 1.3;
-        margin-bottom: 20px;
-        margin-top: 0;
-    }
-
-    .hero-subtext {
-        font-size: 1rem;
-        margin-bottom: 30px;
-        line-height: 1.5;
-    }
-    
-    .hero-cta-button {
-        display: inline-block; /* Ensure button sits in flow */
-        margin-bottom: 10px;
-    }
-
-    /* Optional: Stack features cleanly if they aren't already */
-    .features-section {
-        padding-top: 0 !important; /* Remove extra gap since Hero has bottom padding */
-    }
-}
-
-/* ========================================= */
-/* MANUAL MODAL STYLES                       */
+/* MODAL STYLES (RESTORED)                   */
 /* ========================================= */
 
 .btn-text {
@@ -262,10 +240,7 @@
     margin: 0;
     transition: color 0.2s;
 }
-
-.btn-text:hover {
-    color: var(--accent-blue);
-}
+.btn-text:hover { color: var(--accent-blue); }
 
 .modal-overlay {
     position: fixed;
@@ -273,7 +248,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.85); /* Darker backdrop */
+    background-color: rgba(0, 0, 0, 0.85);
     z-index: 1000;
     display: flex;
     justify-content: center;
@@ -306,6 +281,7 @@
     font-size: 2rem;
     cursor: pointer;
     line-height: 1;
+    z-index: 10;
     transition: color 0.2s;
 }
 
@@ -392,8 +368,24 @@
     to { transform: translateY(0); opacity: 1; }
 }
 
-/* Mobile Adjustments for Modal */
+/* --- Mobile Fixes --- */
 @media (max-width: 768px) {
+    .hero-section {
+        display: block !important;
+        height: auto !important;
+        padding-top: 140px !important;
+        padding-bottom: 60px !important;
+        margin-top: 0 !important;
+    }
+    .hero-content h1 {
+        font-size: 2.2rem;
+    }
+    .features-section {
+        padding: 40px 20px;
+        grid-template-columns: 1fr;
+    }
+    
+    /* Mobile Modal Fixes */
     .manual-grid {
         flex-direction: column;
     }

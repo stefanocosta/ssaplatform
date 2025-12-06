@@ -1,13 +1,8 @@
 import React from 'react';
-// We don't need a specific CSS file here as it inherits from parent pages, 
-// but inline styles ensure specific colors render correctly.
 
 const ManualModal = ({ onClose }) => {
     return (
         <div className="modal-overlay" onClick={onClose}>
-            {/* NOTE: The CSS classes 'modal-overlay', 'modal-content', etc., 
-                must exist in LandingPage.css (which is loaded globally or by the parent).
-            */}
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <button className="modal-close-btn" onClick={onClose}>&times;</button>
                 
@@ -91,30 +86,35 @@ const ManualModal = ({ onClose }) => {
                         </p>
                     </section>
 
+                    {/* --- UPDATED SECTION 6 --- */}
                     <section>
                         <h3>6. The Market Scanner</h3>
                         <p>
                             The Scanner automates the search for opportunities. Instead of manually checking every asset, the Scanner analyzes the entire asset list in seconds.
                         </p>
                         <ul>
-                            <li><strong>Trend Column:</strong> Indicates the current slope of the Zero-Lag Trend. 
+                            <li><strong>Trend (TRND):</strong> Indicates the current slope of the Zero-Lag Trend. 
                                 (<span style={{color: '#00c853'}}>Up Arrow</span> = Bullish, <span style={{color: '#ff3d00'}}>Down Arrow</span> = Bearish).
                             </li>
                             <li>
                                 <strong>Cycle % & Fast %:</strong> These percentages show the component's position relative to its historical range.
                                 <ul>
-                                    <li><strong>0%</strong> = Historical Support (Valley).</li>
-                                    <li><strong>100%</strong> = Historical Resistance (Peak).</li>
-                                    <li><span style={{color: '#00c853'}}><strong>Green (&lt; 20%):</strong></span> The cycle is bottoming out (Oversold).</li>
-                                    <li><span style={{color: '#ff3d00'}}><strong>Red (&gt; 80%):</strong></span> The cycle is topping out (Overbought).</li>
-                                    <li><em>Note: Values can exceed 100% (strong breakout) or drop below 0% (strong breakdown).</em></li>
+                                    <li><span style={{color: '#00c853'}}><strong>Green (&lt; 20%):</strong></span> Bottoming out (Oversold).</li>
+                                    <li><span style={{color: '#ff3d00'}}><strong>Red (&gt; 80%):</strong></span> Topping out (Overbought).</li>
                                 </ul>
                             </li>
-                            <li><strong>Signal Column:</strong> Only appears if a valid "Pinpoint Signal" (Section 4) is detected on the current bar.</li>
+                            {/* NEW FEATURE EXPLANATION */}
+                            <li>
+                                <strong>Forecast (FCST):</strong> Our predictive engine projects the next 20 bars into the future.
+                                <ul>
+                                    <li><span style={{color: '#00c853'}}>Up Arrow</span>: The model predicts price/cycle will be higher in the future.</li>
+                                    <li><span style={{color: '#ff3d00'}}>Down Arrow</span>: The model predicts price/cycle will be lower in the future.</li>
+                                </ul>
+                            </li>
+                            <li><strong>Signal Column:</strong> Only appears if a valid "Pinpoint Signal" is detected right now.</li>
                         </ul>
                     </section>
 
-                    {/* --- NEW SECTION: DEEP ANALYSIS --- */}
                     <section>
                         <h3>7. Deep Analysis Tool</h3>
                         <p>
@@ -141,7 +141,6 @@ const ManualModal = ({ onClose }) => {
                         </ul>
                     </section>
 
-                    {/* --- DISCLAIMER --- */}
                     <section style={{marginTop: '30px', borderTop: '1px solid #444', paddingTop: '20px', opacity: 0.8}}>
                         <h3>9. Risk Disclosure & Disclaimer</h3>
                         <p style={{fontSize: '0.85rem', lineHeight: '1.4'}}>
