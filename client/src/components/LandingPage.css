@@ -369,23 +369,55 @@
 }
 
 /* --- Mobile Fixes --- */
+/* --- Mobile Fixes --- */
 @media (max-width: 768px) {
+    /* 1. Hero Section: Switch to Auto Height */
     .hero-section {
-        display: block !important;
-        height: auto !important;
+        display: flex !important;
+        flex-direction: column;
+        justify-content: center;
+        
+        /* FORCE the container to grow with the text */
+        height: auto !important; 
+        min-height: 100vh; /* Ensures it looks good even with little content */
+        
+        /* Add plenty of padding so text doesn't hit the nav or the next section */
         padding-top: 140px !important;
-        padding-bottom: 60px !important;
+        padding-bottom: 80px !important;
+        
         margin-top: 0 !important;
     }
-    .hero-content h1 {
-        font-size: 2.2rem;
+
+    /* 2. Hero Content: Ensure width containment */
+    .hero-content {
+        width: 100%;
+        max-width: 100%;
+        padding: 0 20px; /* Safe gutters */
+        box-sizing: border-box;
     }
+
+    /* 3. Headlines: Increase line-height to prevent crashing */
+    .hero-content h1 {
+        font-size: 2rem; /* Smaller font for mobile */
+        line-height: 1.4; /* More breathing room between lines */
+        margin-bottom: 25px; /* Push the paragraph away */
+    }
+
+    /* 4. Subtext: Prevent overlapping with button or header */
+    .hero-subtext {
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-bottom: 35px; /* Push the button away */
+    }
+
+    /* 5. Features Section: Stack cards vertically */
     .features-section {
         padding: 40px 20px;
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr; /* Force 1 column */
+        gap: 20px;
     }
     
-    /* Mobile Modal Fixes */
+    /* 6. Modal Mobile Adjustments */
     .manual-grid {
         flex-direction: column;
     }
