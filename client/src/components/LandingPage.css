@@ -99,7 +99,7 @@
     font-weight: 800;
 }
 
-/* FIXED GRADIENT TEXT */
+/* GRADIENT TEXT */
 .text-gradient {
     background: linear-gradient(90deg, #1c86ff, #00c853);
     background-clip: text;
@@ -142,6 +142,8 @@
     padding: 60px 20px;
     text-align: center;
     border-bottom: 1px solid #222;
+    position: relative; /* Ensures z-index stacking works */
+    z-index: 2;
 }
 
 .impact-section h2 {
@@ -228,7 +230,7 @@
 }
 
 /* ========================================= */
-/* MODAL STYLES (RESTORED)                   */
+/* MODAL STYLES                              */
 /* ========================================= */
 
 .btn-text {
@@ -357,70 +359,60 @@
     color: #b3b3b3;
 }
 
-/* Animations */
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-@keyframes slideUp {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-/* --- Mobile Fixes --- */
-/* --- Mobile Fixes --- */
-/* --- Mobile Fixes --- */
+/* ========================================= */
+/* MOBILE SPECIFIC FIXES (CRITICAL)          */
+/* ========================================= */
 @media (max-width: 768px) {
-    /* 1. Hero Section Fixes */
     .hero-section {
-        display: flex !important;
-        flex-direction: column;
+        /* Use Block layout to guarantee content pushes the next section down */
+        display: block !important; 
         
-        /* FIX: Stop trying to center vertically. Start from the top. */
-        justify-content: flex-start !important; 
-        
-        /* Force container to grow with text */
+        /* Reset height so it grows with text */
         height: auto !important; 
-        min-height: 100vh; 
+        min-height: auto !important;
         
-        /* Increase top padding to clear the Fixed Nav Bar */
-        /* 160px gives plenty of safe space below the logo/buttons */
+        /* Top padding ensures text clears the Fixed Header */
         padding-top: 160px !important; 
-        padding-bottom: 80px !important;
+        
+        /* Bottom padding ensures gap before "Impact Section" */
+        padding-bottom: 80px !important; 
         
         margin-top: 0 !important;
     }
 
-    /* 2. Content Width */
     .hero-content {
+        /* Standard flow positioning */
         width: 100%;
         max-width: 100%;
         padding: 0 20px;
         box-sizing: border-box;
     }
 
-    /* 3. Text Sizing */
+    /* Headlines */
     .hero-content h1 {
         font-size: 2rem;
-        line-height: 1.4;
+        line-height: 1.4; /* Prevent text crushing */
         margin-bottom: 25px;
     }
 
+    /* Subtext */
     .hero-subtext {
         font-size: 1rem;
         line-height: 1.6;
         margin-bottom: 35px;
     }
 
-    /* 4. Features Section: Stack vertically */
+    /* Feature Grid Stacking */
     .features-section {
         padding: 40px 20px;
         grid-template-columns: 1fr;
         gap: 20px;
     }
 
-    /* 5. Mobile Modal Fixes */
+    /* Modal Stacking */
     .manual-grid {
         flex-direction: column;
     }
