@@ -370,54 +370,57 @@
 
 /* --- Mobile Fixes --- */
 /* --- Mobile Fixes --- */
+/* --- Mobile Fixes --- */
 @media (max-width: 768px) {
-    /* 1. Hero Section: Switch to Auto Height */
+    /* 1. Hero Section Fixes */
     .hero-section {
         display: flex !important;
         flex-direction: column;
-        justify-content: center;
         
-        /* FORCE the container to grow with the text */
+        /* FIX: Stop trying to center vertically. Start from the top. */
+        justify-content: flex-start !important; 
+        
+        /* Force container to grow with text */
         height: auto !important; 
-        min-height: 100vh; /* Ensures it looks good even with little content */
+        min-height: 100vh; 
         
-        /* Add plenty of padding so text doesn't hit the nav or the next section */
-        padding-top: 140px !important;
+        /* Increase top padding to clear the Fixed Nav Bar */
+        /* 160px gives plenty of safe space below the logo/buttons */
+        padding-top: 160px !important; 
         padding-bottom: 80px !important;
         
         margin-top: 0 !important;
     }
 
-    /* 2. Hero Content: Ensure width containment */
+    /* 2. Content Width */
     .hero-content {
         width: 100%;
         max-width: 100%;
-        padding: 0 20px; /* Safe gutters */
+        padding: 0 20px;
         box-sizing: border-box;
     }
 
-    /* 3. Headlines: Increase line-height to prevent crashing */
+    /* 3. Text Sizing */
     .hero-content h1 {
-        font-size: 2rem; /* Smaller font for mobile */
-        line-height: 1.4; /* More breathing room between lines */
-        margin-bottom: 25px; /* Push the paragraph away */
+        font-size: 2rem;
+        line-height: 1.4;
+        margin-bottom: 25px;
     }
 
-    /* 4. Subtext: Prevent overlapping with button or header */
     .hero-subtext {
         font-size: 1rem;
         line-height: 1.6;
-        margin-bottom: 35px; /* Push the button away */
+        margin-bottom: 35px;
     }
 
-    /* 5. Features Section: Stack cards vertically */
+    /* 4. Features Section: Stack vertically */
     .features-section {
         padding: 40px 20px;
-        grid-template-columns: 1fr; /* Force 1 column */
+        grid-template-columns: 1fr;
         gap: 20px;
     }
-    
-    /* 6. Modal Mobile Adjustments */
+
+    /* 5. Mobile Modal Fixes */
     .manual-grid {
         flex-direction: column;
     }
