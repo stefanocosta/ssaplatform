@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+import { X } from 'lucide-react';
 
 const ForwardTestModal = ({ onClose }) => {
     const [data, setData] = useState(null);
@@ -23,7 +23,20 @@ const ForwardTestModal = ({ onClose }) => {
         fetchResults();
     }, []);
 
-    if (!data && loading) return null; // Or spinner
+    if (!data && loading) return null;
+
+    // Helper for color coding arrows/text
+    const getDirColor = (dir) => {
+        if (dir === 'UP') return '#00c853';
+        if (dir === 'DOWN') return '#ff3d00';
+        return '#888';
+    };
+
+    const getCycleColor = (val) => {
+        if (val > 80) return '#ff3d00'; // Overbought
+        if (val < 20) return '#00c853'; // Oversold
+        return '#aaa';
+    };
 
     return (
         <div style={{
@@ -32,7 +45,8 @@ const ForwardTestModal = ({ onClose }) => {
             display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
             <div style={{
-                width: '900px', height: '80vh', backgroundColor: '#1e1e1e',
+                width: '1100px', // WIDENED to fit columns
+                height: '80vh', backgroundColor: '#1e1e1e',
                 borderRadius: '12px', display: 'flex', flexDirection: 'column',
                 border: '1px solid #444', boxShadow: '0 0 20px black'
             }}>
@@ -41,7 +55,7 @@ const ForwardTestModal = ({ onClose }) => {
                     <div>
                         <h2 style={{ color: 'white', margin: 0 }}>Forward Test Results</h2>
                         <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '5px' }}>
-                            Simulated $1000 entries on live signals (Stop & Reverse)
+                            Simulated $1000 entries | Showing market snapshot @ Entry
                         </div>
                     </div>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X /></button>
@@ -71,16 +85,22 @@ const ForwardTestModal = ({ onClose }) => {
 
                 {/* Table */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', color: '#ddd', fontSize: '0.9rem' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', color: '#ddd', fontSize: '0.85rem' }}>
                         <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', textAlign: 'left' }}>
                             <tr style={{ borderBottom: '1px solid #444', color: '#888' }}>
                                 <th style={{ padding: '10px' }}>Asset</th>
                                 <th>Int</th>
-                                <th>Type</th>
+                                <th>Dir</th>
+                                {/* NEW COLUMNS */}
+                                <th>TRND</th>
+                                <th>CYC</th>
+                                <th>FST</th>
+                                <th>FCST</th>
+                                {/* END NEW COLUMNS */}
                                 <th>Status</th>
-                                <th>Entry ($)</th>
+                                <th>Entry</th>
                                 <th>Time</th>
-                                <th>Exit ($)</th>
+                                <th>Exit</th>
                                 <th>PnL</th>
                             </tr>
                         </thead>
@@ -92,12 +112,28 @@ const ForwardTestModal = ({ onClose }) => {
                                     <td>
                                         <span style={{ 
                                             color: trade.direction === 'LONG' ? '#00c853' : '#ff3d00',
-                                            fontWeight: 'bold', fontSize: '0.8rem', padding: '2px 6px',
+                                            fontWeight: 'bold', padding: '2px 6px',
                                             background: 'rgba(255,255,255,0.1)', borderRadius: '4px'
                                         }}>
                                             {trade.direction}
                                         </span>
                                     </td>
+                                    
+                                    {/* --- NEW CELLS --- */}
+                                    <td style={{ fontWeight: 'bold', color: getDirColor(trade.trend) }}>
+                                        {trade.trend}
+                                    </td>
+                                    <td style={{ fontWeight: 'bold', color: getCycleColor(trade.cycle) }}>
+                                        {trade.cycle}
+                                    </td>
+                                    <td style={{ fontWeight: 'bold', color: getCycleColor(trade.fast) }}>
+                                        {trade.fast}
+                                    </td>
+                                    <td style={{ fontWeight: 'bold', color: getDirColor(trade.forecast) }}>
+                                        {trade.forecast}
+                                    </td>
+                                    {/* ---------------- */}
+
                                     <td style={{ color: trade.status === 'OPEN' ? '#29b6f6' : '#888' }}>{trade.status}</td>
                                     <td>{trade.entry_price.toFixed(2)}</td>
                                     <td style={{ fontSize: '0.8rem', color: '#aaa' }}>{trade.entry_date}</td>

@@ -608,7 +608,12 @@ def get_forward_results():
             "exit_date": t.exit_time.strftime("%Y-%m-%d %H:%M") if t.exit_time else "-",
             "exit_price": t.exit_price,
             "pnl": round(t.pnl, 2) if t.pnl else 0,
-            "pnl_pct": round(t.pnl_pct, 2) if t.pnl_pct else 0
+            "pnl_pct": round(t.pnl_pct, 2) if t.pnl_pct else 0,
+            # --- NEW FIELDS (Handle older trades that might have None) ---
+            "trend": t.trend_snapshot if hasattr(t, 'trend_snapshot') and t.trend_snapshot else '-',
+            "forecast": t.forecast_snapshot if hasattr(t, 'forecast_snapshot') and t.forecast_snapshot else '-',
+            "cycle": t.cycle_snapshot if hasattr(t, 'cycle_snapshot') and t.cycle_snapshot is not None else 0,
+            "fast": t.fast_snapshot if hasattr(t, 'fast_snapshot') and t.fast_snapshot is not None else 0,
         })
 
     return jsonify({

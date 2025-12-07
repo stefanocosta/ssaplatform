@@ -8,6 +8,37 @@ from app.models import MarketData
 from app.services.data_manager import save_to_db, TRACKED_ASSETS, track_api_call
 from app.services.forward_test_service import run_forward_test 
 
+def is_asset_trading(symbol):
+    """
+    Determines if an asset is currently trading to avoid useless API calls.
+    """
+    # 1. Crypto is 24/7
+    CRYPTO_SYMBOLS = ['BTC', 'ETH', 'ADA', 'BNB', 'DOGE', 'XRP', 'SOL', 'FET', 'ICP']
+    is_crypto = any(c in symbol for c in CRYPTO_SYMBOLS)
+    if is_crypto: return True
+    
+    now = datetime.utcnow()
+    weekday = now.weekday() # 0=Mon ... 6=Sun
+    hour = now.hour
+    
+    # 2. Stocks (No "/" usually) -> Mon-Fri only
+    if '/' not in symbol:
+        # Closed Sat (5) and Sun (6)
+        if weekday >= 5: return False
+        # Closed Friday Night (after 21:00 UTC)
+        if weekday == 4 and hour >= 21: return False
+        return True
+        
+    # 3. Forex/Metals (Has "/" but not Crypto) -> Closed Fri 22:00 to Sun 21:00
+    # Closed Saturday
+    if weekday == 5: return False
+    # Closed Friday late (Market closes ~22:00 UTC)
+    if weekday == 4 and hour >= 22: return False
+    # Closed Sunday early (Market opens ~21:00-22:00 UTC)
+    if weekday == 6 and hour < 21: return False 
+    
+    return True
+
 def update_market_data():
     """
     1. Check Time & Determine Forward Test Triggers (IMMEDIATELY).
@@ -15,12 +46,12 @@ def update_market_data():
     3. Aggregate to higher timeframes.
     4. Execute Forward Testing if triggered.
     """
-    # 1. CAPTURE TIME AT START (Fixes the skipping issue)
+    # 1. CAPTURE TIME AT START
     now = datetime.utcnow()
     minute = now.minute
     hour = now.hour
     
-    # Decide triggers NOW, before the long data fetch begins
+    # Decide triggers NOW
     trigger_15m = (minute % 15 == 0)
     trigger_1h = (minute == 0)
     trigger_4h = (minute == 0 and hour % 4 == 0)
@@ -39,8 +70,14 @@ def update_market_data():
     asset_chunks = [TRACKED_ASSETS[i:i + chunk_size] for i in range(0, len(TRACKED_ASSETS), chunk_size)]
 
     for chunk in asset_chunks:
-        symbols_str = ",".join(chunk)
-        track_api_call(f"Daemon Batch ({len(chunk)} assets)")
+        # --- FIX 1: Filter out closed assets (Weekend Saver) ---
+        active_chunk = [s for s in chunk if is_asset_trading(s)]
+        
+        if not active_chunk:
+            continue
+            
+        symbols_str = ",".join(active_chunk)
+        track_api_call(f"Daemon Batch ({len(active_chunk)} assets)")
 
         url = "https://api.twelvedata.com/time_series"
         params = {
@@ -58,7 +95,12 @@ def update_market_data():
                 print(f"⚠️ API Error: {resp.get('message')}")
                 continue
 
-            if len(chunk) == 1: resp = {chunk[0]: resp}
+            # Handle single result format vs dictionary
+            if len(active_chunk) == 1: 
+                if 'code' in resp and resp['code'] >= 400:
+                     print(f"⚠️ Error for symbol {active_chunk[0]}: {resp.get('message')}")
+                     continue
+                resp = {active_chunk[0]: resp}
 
             for sym, data in resp.items():
                 if isinstance(data, dict) and 'values' in data:
@@ -86,11 +128,11 @@ def update_market_data():
         except Exception as e:
             print(f"❌ Daemon Batch Failed: {e}")
 
-    # 3. EXECUTE FORWARD TESTS (Based on start time)
+    # 3. EXECUTE FORWARD TESTS
     try:
         if trigger_15m:
             print("🚀 Triggering 15m Forward Test...")
-            run_forward_test('15min', api_key) # Pass API key for robustness
+            run_forward_test('15min', api_key) 
 
         if trigger_1h:
             print("🚀 Triggering 1h Forward Test...")

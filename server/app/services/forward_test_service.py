@@ -1,40 +1,49 @@
 from datetime import datetime
+import time # Added for safety delay if needed
 from app import db
-from app.models import PaperTrade
+from app.models import PaperTrade, MarketData
+# Ensure your model has the new columns before running this!
 from app.services.data_manager import get_historical_data, TRACKED_ASSETS
 from app.services.signal_engine import analyze_market_snapshot
 import pandas as pd
-import time
 
-# List of assets to Forward Test
-#TEST_ASSETS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'BNB/USD', 'ADA/USD']
 INVESTMENT_AMOUNT = 1000.0
 
+def get_historical_data_from_db(symbol, interval, limit=500):
+    """Fetches required historical data from the local database."""
+    stmt = db.select(MarketData).filter(
+        MarketData.symbol == symbol,
+        MarketData.interval == interval,
+    ).order_by(MarketData.time.desc()).limit(limit)
+
+    results = db.session.execute(stmt).scalars().all()
+    results.reverse() 
+
+    data_list = []
+    for r in results:
+        data_list.append({
+            'time': r.time, 
+            'datetime_obj': datetime.utcfromtimestamp(r.time) if isinstance(r.time, int) else r.time,
+            'open': r.open, 'high': r.high, 'low': r.low, 'close': r.close, 'volume': r.volume
+        })
+    return data_list
+
 def run_forward_test(interval, api_key=None):
-    """
-    Runs SSA on all test assets for the given interval.
-    If Signal found -> Execute Paper Trades.
-    """
     print(f"🧪 [ForwardTest] Running for {interval} on {len(TRACKED_ASSETS)} assets...")
     
     for symbol in TRACKED_ASSETS:
-        # 1. Get Data (Pass API key for safety)
-        ohlc = get_historical_data(symbol, interval, api_key, limit=500)
+        # Use DB data to avoid API limits
+        ohlc = get_historical_data_from_db(symbol, interval, limit=500)
         
-        time.sleep(1.5)
-
         if not ohlc or len(ohlc) < 50:
-            print(f"   ⚠️ Skipping {symbol}: Insufficient Data ({len(ohlc) if ohlc else 0})")
             continue
         
         df = pd.DataFrame(ohlc)
         closes = df['close'].values.flatten()
         
-        # Ensure we have a valid datetime object for the last candle
         last_candle = ohlc[-1]
         last_time = last_candle.get('datetime_obj')
         if not last_time:
-            # Fallback if datetime_obj is missing
             last_time = datetime.utcfromtimestamp(last_candle['time'])
         
         # 2. Analyze
@@ -46,15 +55,24 @@ def run_forward_test(interval, api_key=None):
         signal = result['signal'] 
         price = float(result['price'])
         
+        # --- NEW: Extract Snapshot Data ---
+        snapshot = {
+            'trend': result['trend_dir'],
+            'forecast': result['forecast_dir'],
+            'cycle': result['cycle_pct'],
+            'fast': result['fast_pct']
+        }
+        # ----------------------------------
+        
         print(f"   ⚡ SIGNAL DETECTED: {symbol} {signal} @ {price}")
 
-        # 3. Execute Trade Logic
+        # 3. Execute Trade Logic (Pass snapshot)
         if signal == 'BUY':
-            handle_buy_signal(symbol, interval, price, last_time)
+            handle_buy_signal(symbol, interval, price, last_time, snapshot)
         elif signal == 'SELL':
-            handle_sell_signal(symbol, interval, price, last_time)
+            handle_sell_signal(symbol, interval, price, last_time, snapshot)
 
-def handle_buy_signal(symbol, interval, price, time):
+def handle_buy_signal(symbol, interval, price, time, snapshot):
     # Close Shorts
     open_shorts = PaperTrade.query.filter_by(
         symbol=symbol, interval=interval, direction='SHORT', status='OPEN'
@@ -67,12 +85,17 @@ def handle_buy_signal(symbol, interval, price, time):
     new_trade = PaperTrade(
         symbol=symbol, interval=interval, direction='LONG', status='OPEN',
         entry_time=time, entry_price=price, invested_amount=INVESTMENT_AMOUNT,
-        quantity=INVESTMENT_AMOUNT / price
+        quantity=INVESTMENT_AMOUNT / price,
+        # --- NEW FIELDS ---
+        trend_snapshot=snapshot['trend'],
+        forecast_snapshot=snapshot['forecast'],
+        cycle_snapshot=snapshot['cycle'],
+        fast_snapshot=snapshot['fast']
     )
     db.session.add(new_trade)
     db.session.commit()
 
-def handle_sell_signal(symbol, interval, price, time):
+def handle_sell_signal(symbol, interval, price, time, snapshot):
     # Close Longs
     open_longs = PaperTrade.query.filter_by(
         symbol=symbol, interval=interval, direction='LONG', status='OPEN'
@@ -85,7 +108,12 @@ def handle_sell_signal(symbol, interval, price, time):
     new_trade = PaperTrade(
         symbol=symbol, interval=interval, direction='SHORT', status='OPEN',
         entry_time=time, entry_price=price, invested_amount=INVESTMENT_AMOUNT,
-        quantity=INVESTMENT_AMOUNT / price
+        quantity=INVESTMENT_AMOUNT / price,
+        # --- NEW FIELDS ---
+        trend_snapshot=snapshot['trend'],
+        forecast_snapshot=snapshot['forecast'],
+        cycle_snapshot=snapshot['cycle'],
+        fast_snapshot=snapshot['fast']
     )
     db.session.add(new_trade)
     db.session.commit()

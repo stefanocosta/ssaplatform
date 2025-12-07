@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.signal import find_peaks
 from . import ssa_service
+from . import forecast_service 
 
 def calculate_cycle_position(component_values):
     """(Moved from routes.py to be reusable)"""
@@ -20,7 +21,7 @@ def calculate_cycle_position(component_values):
 
 def analyze_market_snapshot(close_prices, L_param=30, use_adaptive=True):
     """
-    Returns the signal status for a specific set of price data.
+    Returns the signal status AND the snapshot stats.
     """
     N = len(close_prices)
     L = 39 if use_adaptive else min(L_param, N // 2)
@@ -36,6 +37,7 @@ def analyze_market_snapshot(close_prices, L_param=30, use_adaptive=True):
         # Current & Previous values
         curr_price = close_prices[-1]
         curr_trend = trend[-1]
+        prev_trend = trend[-2] # Needed for Trend Direction
         
         curr_recon = reconstructed[-1]
         curr_noise = noise[-1]
@@ -44,6 +46,18 @@ def analyze_market_snapshot(close_prices, L_param=30, use_adaptive=True):
         # Calculate Stats
         cyc_pos = calculate_cycle_position(cyclic)
         fast_pos = calculate_cycle_position(noise)
+
+        # --- NEW: Calculate Directions ---
+        trend_dir = "UP" if curr_trend > prev_trend else "DOWN"
+        
+        forecast_dir = "FLAT"
+        try:
+            f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=20, min_component=1)
+            if len(f_vals) > 0:
+                forecast_dir = "UP" if f_vals[-1] > f_vals[0] else "DOWN"
+        except:
+            pass
+        # ---------------------------------
 
         # Logic
         is_hot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
@@ -60,7 +74,9 @@ def analyze_market_snapshot(close_prices, L_param=30, use_adaptive=True):
         return {
             "signal": signal,
             "price": curr_price,
-            "trend": curr_trend,
+            # --- NEW RETURN VALUES ---
+            "trend_dir": trend_dir,
+            "forecast_dir": forecast_dir,
             "cycle_pct": cyc_pos,
             "fast_pct": fast_pos
         }
