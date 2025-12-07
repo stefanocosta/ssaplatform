@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; 
-import { Radar, Activity } from 'lucide-react'; // Added Activity icon
+import { Radar, Activity, FlaskConical } from 'lucide-react'; 
 import TradingChart from './components/TradingChart';
 import AuthForm from './components/AuthForm'; 
 import LandingPage from './components/LandingPage'; 
 import ScannerModal from './components/ScannerModal'; 
-import AnalysisModal from './components/AnalysisModal'; // Import Analysis Modal
+import AnalysisModal from './components/AnalysisModal'; 
+import ForwardTestModal from './components/ForwardTestModal'; 
 import './App.css';
 
 function Platform() {
@@ -25,7 +26,8 @@ function Platform() {
 
   // --- SCANNER & ANALYSIS STATE ---
   const [showScanner, setShowScanner] = useState(false);
-  const [showAnalysis, setShowAnalysis] = useState(false); // New State
+  const [showAnalysis, setShowAnalysis] = useState(false); 
+  const [showForwardTest, setShowForwardTest] = useState(false); 
   
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
@@ -56,10 +58,9 @@ function Platform() {
 
   const handleIntervalChange = (event) => {
     setInputInterval(event.target.value);
-
-    // --- FIX: Close Scanner/Analysis when timeframe changes ---
     setShowScanner(false);
     setShowAnalysis(false);
+    setShowForwardTest(false);
   };
 
   const handleAutoUpdateToggle = (event) => {
@@ -202,6 +203,23 @@ function Platform() {
             </label>
           </span>
 
+          {/* --- FORWARD TEST BUTTON --- */}
+          <button
+            onClick={() => setShowForwardTest(true)}
+            style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                background: '#00c853', color: 'white', border: 'none', 
+                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
+                fontSize: '0.9rem',
+                marginLeft: 'auto', // ONLY the first button in the right-group needs this
+                marginRight: '10px'
+            }}
+            title="View Forward Test Results"
+          >
+            <FlaskConical size={16} />
+            Test
+          </button>
+
           {/* --- ANALYSIS BUTTON --- */}
           <button
             onClick={() => setShowAnalysis(!showAnalysis)}
@@ -210,8 +228,7 @@ function Platform() {
                 background: '#e600adff', color: '#d1d4dc', border: '1px solid #444',
                 borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
                 fontSize: '0.9rem',
-                marginLeft: 'auto', // Pushes this and subsequent elements to the right
-                marginRight: '10px'
+                marginRight: '10px' // Spacing between buttons
             }}
             title="Deep Analysis"
           >
@@ -227,7 +244,6 @@ function Platform() {
                 background: '#0078d4', color: 'white', border: 'none',
                 borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
                 fontSize: '0.9rem'
-                // Removed marginLeft: auto, so it sits right next to Analysis
             }}
             title="Scan market for signals"
           >
@@ -263,7 +279,7 @@ function Platform() {
           </div>
         </div>
 
-        {/* --- SCANNER MODAL --- */}
+        {/* --- MODALS --- */}
         {showScanner && (
             <ScannerModal 
                 interval={inputInterval} 
@@ -274,12 +290,17 @@ function Platform() {
             />
         )}
         
-        {/* --- ANALYSIS MODAL --- */}
         {showAnalysis && (
             <AnalysisModal
                 symbol={finalSymbol}
                 interval={inputInterval}
                 onClose={() => setShowAnalysis(false)}
+            />
+        )}
+
+        {showForwardTest && (
+            <ForwardTestModal 
+                onClose={() => setShowForwardTest(false)}
             />
         )}
 

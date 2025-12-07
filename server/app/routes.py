@@ -545,3 +545,44 @@ def analyze_asset():
     except Exception as e:
         print(f"Analysis error: {e}")
         return jsonify({"error": str(e)}), 500
+    
+from app.models import PaperTrade
+
+@bp.route('/forward-test-results', methods=['GET'])
+@jwt_required()
+def get_forward_results():
+    # Fetch all trades ordered by time desc
+    trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).limit(200).all()
+    
+    # Calculate Summary Stats
+    total_pnl = sum(t.pnl for t in trades if t.status == 'CLOSED')
+    win_rate = 0
+    closed_trades = [t for t in trades if t.status == 'CLOSED']
+    if closed_trades:
+        wins = len([t for t in closed_trades if t.pnl > 0])
+        win_rate = round((wins / len(closed_trades)) * 100, 1)
+
+    trade_list = []
+    for t in trades:
+        trade_list.append({
+            "id": t.id,
+            "symbol": t.symbol,
+            "interval": t.interval,
+            "direction": t.direction,
+            "status": t.status,
+            "entry_date": t.entry_time.strftime("%Y-%m-%d %H:%M"),
+            "entry_price": t.entry_price,
+            "exit_date": t.exit_time.strftime("%Y-%m-%d %H:%M") if t.exit_time else "-",
+            "exit_price": t.exit_price,
+            "pnl": round(t.pnl, 2) if t.pnl else 0,
+            "pnl_pct": round(t.pnl_pct, 2) if t.pnl_pct else 0
+        })
+
+    return jsonify({
+        "summary": {
+            "total_pnl": round(total_pnl, 2),
+            "win_rate": win_rate,
+            "total_trades": len(closed_trades)
+        },
+        "trades": trade_list
+    })

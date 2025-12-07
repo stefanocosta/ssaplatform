@@ -5,11 +5,13 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt 
 from flask_jwt_extended import JWTManager, get_jwt, create_access_token, get_jwt_identity, verify_jwt_in_request
 from datetime import datetime, timezone, timedelta # Import datetime utils
+from flask_migrate import Migrate
 
 # Initialize extensions globally
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 jwt = JWTManager()
+migrate = Migrate()
 
 def create_app(config_class=Config):
     app = Flask(__name__)

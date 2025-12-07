@@ -1,6 +1,6 @@
 from app import db, bcrypt
 from datetime import datetime
-import calendar # <--- NEW IMPORT
+import calendar
 
 class User(db.Model):
     __tablename__ = 'user' 
@@ -43,9 +43,6 @@ class MarketData(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
-        # --- FIX: NUCLEAR OPTION FOR TIMEZONES ---
-        # calendar.timegm ignores local system time and treats the tuple as raw UTC.
-        # This guarantees that 10:00 in DB becomes exactly the same integer as 10:00 API.
         return {
             "time": calendar.timegm(self.time.timetuple()), 
             "open": self.open,
@@ -58,3 +55,24 @@ class MarketData(db.Model):
     __table_args__ = (
         db.Index('idx_symbol_interval_time', 'symbol', 'interval', 'time'),
     )
+
+# --- FIX: MOVED TO LEFT MARGIN (Not inside MarketData) ---
+class PaperTrade(db.Model):
+    __tablename__ = 'paper_trade' # Good practice to name tables explicitly
+    id = db.Column(db.Integer, primary_key=True)
+    symbol = db.Column(db.String(20), nullable=False)
+    interval = db.Column(db.String(10), nullable=False) 
+    direction = db.Column(db.String(10), nullable=False) 
+    status = db.Column(db.String(10), default='OPEN') 
+    
+    # Entry Details
+    entry_time = db.Column(db.DateTime, nullable=False)
+    entry_price = db.Column(db.Float, nullable=False)
+    invested_amount = db.Column(db.Float, default=1000.0) 
+    quantity = db.Column(db.Float, nullable=False) 
+    
+    # Exit Details
+    exit_time = db.Column(db.DateTime, nullable=True)
+    exit_price = db.Column(db.Float, nullable=True)
+    pnl = db.Column(db.Float, nullable=True) 
+    pnl_pct = db.Column(db.Float, nullable=True)
