@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, RefreshCw, TrendingUp, TrendingDown, AlertCircle, ChevronLeft, Minus } from 'lucide-react';
+import { X, RefreshCw, TrendingUp, TrendingDown, AlertCircle, ChevronLeft, ChevronRight, Minus, Filter, Maximize2, Minimize2 } from 'lucide-react';
 
-const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
-    const [signals, setSignals] = useState([]);
+const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
+    const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeSymbol, setActiveSymbol] = useState(null);
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false); // Minimized to side tab
+    const [isDetailed, setIsDetailed] = useState(true);   // Toggle between Full/Compact view
+    
+    const [showSignalsOnly, setShowSignalsOnly] = useState(false);
 
     useEffect(() => {
         scanMarket();
@@ -20,7 +23,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
             });
             const data = await response.json();
             if (Array.isArray(data)) {
-                setSignals(data);
+                setResults(data);
             }
         } catch (error) {
             console.error("Scan failed", error);
@@ -35,12 +38,15 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
         setIsCollapsed(true);
     };
 
-    // Helper to color code the percentage (Oscillator style)
     const getPctColor = (val) => {
-        if (val >= 80) return '#ef5350'; // Red (Top/Overbought)
-        if (val <= 20) return '#26a69a'; // Green (Bottom/Oversold)
-        return '#b0b0b0'; // Gray (Mid-range)
+        if (val >= 80) return '#ef5350'; 
+        if (val <= 20) return '#26a69a'; 
+        return '#b0b0b0'; 
     };
+
+    const displayedResults = showSignalsOnly 
+        ? results.filter(r => r.signal !== null)
+        : results;
 
     if (isCollapsed) {
         return (
@@ -62,124 +68,190 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
         );
     }
 
+    // --- DYNAMIC GRID LAYOUT ---
+    // Detailed: Tightened spacing (1.1fr asset, tighter stats)
+    const detailedGrid = '1.1fr 0.3fr 0.4fr 0.4fr 0.3fr 0.75fr 0.6fr 0.5fr';
+    // Compact: Just Asset and Signal
+    const compactGrid = '1.5fr 0.5fr';
+
+    const currentGrid = isDetailed ? detailedGrid : compactGrid;
+    const currentWidth = isDetailed ? '620px' : '260px'; // Resize modal based on view
+
     return (
         <div style={{
-            position: 'fixed', top: '110px', right: '20px', bottom: '20px', width: '380px',
-            backgroundColor: 'rgba(30, 30, 30, 0.95)', backdropFilter: 'blur(5px)',
+            position: 'fixed', top: '90px', right: '20px', bottom: '20px', 
+            width: currentWidth, 
+            maxWidth: '95vw',
+            backgroundColor: 'rgba(30, 30, 30, 0.98)', backdropFilter: 'blur(10px)',
             borderRadius: '12px', border: '1px solid #444',
             display: 'flex', flexDirection: 'column',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.6)', zIndex: 1000,
+            boxShadow: '0 4px 30px rgba(0,0,0,0.7)', zIndex: 1000,
+            transition: 'width 0.2s ease-in-out', // Smooth resize animation
             animation: 'slideIn 0.3s ease-out'
         }}>
+            {/* HEADER */}
             <div style={{ 
-                padding: '12px 15px', borderBottom: '1px solid #444', 
+                padding: '12px 10px', borderBottom: '1px solid #444', 
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 backgroundColor: '#252525', borderTopLeftRadius: '12px', borderTopRightRadius: '12px'
             }}>
-                <h2 style={{ color: '#d1d4dc', margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <RefreshCw className={loading ? 'spinner' : ''} size={16} />
-                    Scanner ({interval})
-                </h2>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                    <button onClick={() => setIsCollapsed(true)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer' }}><Minus size={20} /></button>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer' }}><X size={20} /></button>
+                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                    <h2 style={{ color: '#d1d4dc', margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <RefreshCw className={loading ? 'spinner' : ''} size={14} />
+                        {isDetailed ? `Scanner (${interval})` : interval}
+                    </h2>
+
+                    {/* FILTER TOGGLE (Only show in detailed view to save space) */}
+                    {isDetailed && (
+                        <label style={{ 
+                            display: 'flex', alignItems: 'center', gap: '4px', 
+                            fontSize: '0.75rem', color: showSignalsOnly ? '#fff' : '#888',
+                            cursor: 'pointer', background: '#333', padding: '2px 6px', borderRadius: '4px'
+                        }}>
+                            <input 
+                                type="checkbox" 
+                                checked={showSignalsOnly} 
+                                onChange={e => setShowSignalsOnly(e.target.checked)}
+                                style={{accentColor: '#0078d4', width:'12px', height:'12px'}}
+                            />
+                            Signals Only
+                        </label>
+                    )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '2px' }}>
+                    {/* EXPAND/COLLAPSE BUTTON */}
+                    <button 
+                        onClick={() => setIsDetailed(!isDetailed)} 
+                        title={isDetailed ? "Compact View" : "Detailed View"}
+                        style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding:'2px' }}
+                    >
+                        {isDetailed ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                    </button>
+                    
+                    <button onClick={() => setIsCollapsed(true)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding:'2px' }}><Minus size={18} /></button>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding:'2px' }}><X size={18} /></button>
                 </div>
             </div>
 
-            <div style={{ padding: '10px', overflowY: 'auto', flexGrow: 1 }}>
+            {/* CONTENT */}
+            <div style={{ padding: '8px', overflowY: 'auto', flexGrow: 1 }}>
                 {loading ? (
                     <div style={{ padding: '40px 10px', textAlign: 'center', color: '#888' }}>
-                        <RefreshCw className="spinner" size={30} style={{ marginBottom: '15px', opacity: 0.7 }} />
-                        <p style={{fontSize: '0.9rem'}}>Scanning...</p>
+                        <RefreshCw className="spinner" size={24} style={{ marginBottom: '15px', opacity: 0.7 }} />
+                        <p style={{fontSize: '0.8rem'}}>Scanning...</p>
                     </div>
-                ) : signals.length === 0 ? (
+                ) : displayedResults.length === 0 ? (
                     <div style={{ padding: '40px 10px', textAlign: 'center', color: '#888' }}>
-                        <AlertCircle size={30} style={{ marginBottom: '10px', opacity: 0.5 }} />
-                        <p style={{fontSize: '0.9rem'}}>No signals.</p>
+                        <AlertCircle size={24} style={{ marginBottom: '10px', opacity: 0.5 }} />
+                        <p style={{fontSize: '0.8rem'}}>No results.</p>
                     </div>
                 ) : (
-                    <div style={{ display: 'grid', gap: '8px' }}>
-                        {/* HEADER ROW - UPDATED WITH FCST */}
+                    <div style={{ display: 'grid', gap: '3px' }}>
+                        {/* COLUMN HEADER */}
                         <div style={{ 
                             display: 'grid', 
-                            gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.5fr 0.8fr', 
-                            padding: '0 10px', fontSize: '0.70rem', color: '#888', fontWeight: 'bold' 
+                            gridTemplateColumns: currentGrid, 
+                            padding: '0 6px 4px 6px', fontSize: '0.65rem', color: '#888', fontWeight: 'bold', letterSpacing: '0.5px'
                         }}>
                             <span>ASSET</span>
-                            <span style={{textAlign: 'center'}}>TRND</span>
-                            <span style={{textAlign: 'center'}}>CYC %</span>
-                            <span style={{textAlign: 'center'}}>FAST %</span>
-                            <span style={{textAlign: 'center'}}>FCST</span>
-                            <span style={{textAlign: 'right'}}>SIGNAL</span>
+                            
+                            {/* DETAILED COLUMNS */}
+                            {isDetailed && (
+                                <>
+                                    <span style={{textAlign:'center'}}>TRND</span>
+                                    <span style={{textAlign:'center'}}>CYC</span>
+                                    <span style={{textAlign:'center'}}>FST</span>
+                                    <span style={{textAlign:'center'}}>FCST</span>
+                                    <span style={{textAlign:'center'}}>POS (AGE)</span>
+                                    <span style={{textAlign:'right'}}>PnL %</span>
+                                </>
+                            )}
+                            
+                            <span style={{textAlign:'right'}}>ACTIVE</span>
                         </div>
 
-                        {signals.map((sig, idx) => {
-                            const isActive = activeSymbol === sig.symbol;
+                        {/* ROW RENDERING */}
+                        {displayedResults.map((item, idx) => {
+                            const isActive = activeSymbol === item.symbol;
+                            const pnlValue = item.pnl_pct !== undefined && item.pnl_pct !== null ? item.pnl_pct : 0;
+                            const hasPosition = item.position && item.position !== 'NEUTRAL';
+
                             return (
                                 <div 
                                     key={idx}
-                                    onClick={() => handleSignalClick(sig.symbol)}
+                                    onClick={() => handleSignalClick(item.symbol)}
                                     style={{
                                         display: 'grid', 
-                                        gridTemplateColumns: '1.2fr 0.5fr 0.6fr 0.6fr 0.5fr 0.8fr',
+                                        gridTemplateColumns: currentGrid,
                                         alignItems: 'center',
-                                        backgroundColor: isActive ? '#404040' : '#2a2a2a', 
+                                        backgroundColor: isActive ? '#404040' : (idx % 2 === 0 ? '#2a2a2a' : '#252525'), 
                                         border: isActive ? '1px solid #0078d4' : '1px solid transparent',
-                                        padding: '10px 8px', borderRadius: '6px',
+                                        padding: '6px 6px', borderRadius: '4px',
                                         cursor: 'pointer', 
-                                        borderLeft: `4px solid ${sig.type === 'BUY' ? '#00ff00' : '#ff0000'}`,
-                                        transition: 'all 0.2s'
+                                        borderLeft: item.signal 
+                                            ? `3px solid ${item.signal === 'BUY' ? '#00ff00' : '#ff0000'}`
+                                            : (pnlValue > 0 ? '3px solid #4caf50' : '3px solid transparent'),
+                                        transition: 'all 0.1s'
                                     }}
                                 >
-                                    {/* COL 1: Asset & Price */}
+                                    {/* 1. ASSET */}
                                     <div style={{overflow: 'hidden'}}>
-                                        <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sig.symbol}</div>
-                                        <div style={{ color: '#888', fontSize: '0.75rem' }}>{sig.price.toFixed(sig.price < 1 ? 4 : 2)}</div>
+                                        <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace:'nowrap' }}>{item.symbol}</div>
+                                        {isDetailed && (
+                                            <div style={{ color: '#666', fontSize: '0.65rem' }}>{item.price.toFixed(item.price < 1 ? 4 : 2)}</div>
+                                        )}
                                     </div>
 
-                                    {/* COL 2: Trend Direction */}
-                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                        {sig.trend_dir === 'UP' 
-                                            ? <TrendingUp size={18} color="#26a69a" /> 
-                                            : <TrendingDown size={18} color="#ef5350" />
-                                        }
-                                    </div>
+                                    {/* DETAILED COLUMNS */}
+                                    {isDetailed && (
+                                        <>
+                                            {/* 2. TREND */}
+                                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                {item.trend_dir === 'UP' ? <TrendingUp size={14} color="#26a69a" /> : <TrendingDown size={14} color="#ef5350" />}
+                                            </div>
 
-                                    {/* COL 3: Cycle Percentage */}
-                                    <div style={{ 
-                                        textAlign: 'center', fontSize: '0.8rem', fontWeight: 'bold',
-                                        color: getPctColor(sig.cycle_pct)
-                                    }}>
-                                        {sig.cycle_pct}%
-                                    </div>
+                                            {/* 3. CYC % */}
+                                            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: getPctColor(item.cycle_pct) }}>{item.cycle_pct}</div>
 
-                                    {/* COL 4: Fast Percentage */}
-                                    <div style={{ 
-                                        textAlign: 'center', fontSize: '0.8rem', fontWeight: 'bold',
-                                        color: getPctColor(sig.fast_pct)
-                                    }}>
-                                        {sig.fast_pct}%
-                                    </div>
+                                            {/* 4. FAST % */}
+                                            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: getPctColor(item.fast_pct) }}>{item.fast_pct}</div>
 
-                                    {/* COL 5: Forecast Direction (NEW) */}
-                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                        {sig.forecast_dir === 'UP' 
-                                            ? <TrendingUp size={18} color="#26a69a" /> 
-                                            : <TrendingDown size={18} color="#ef5350" />
-                                        }
-                                    </div>
+                                            {/* 5. FCST */}
+                                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                {item.forecast_dir === 'UP' ? <TrendingUp size={14} color="#26a69a" /> : (item.forecast_dir === 'DOWN' ? <TrendingDown size={14} color="#ef5350" /> : <Minus size={14} color="#666"/>)}
+                                            </div>
 
-                                    {/* COL 6: Signal Badge */}
+                                            {/* 6. POSITION (AGE) */}
+                                            <div style={{ textAlign: 'center', fontSize: '0.7rem' }}>
+                                                {hasPosition ? (
+                                                    <>
+                                                        <span style={{color: item.position==='LONG'?'#4caf50':'#ef5350', fontWeight:'bold'}}>
+                                                            {item.position.charAt(0)}
+                                                        </span>
+                                                        <span style={{color:'#888'}}> ({item.bars_ago})</span>
+                                                    </>
+                                                ) : <span style={{color:'#444'}}>-</span>}
+                                            </div>
+
+                                            {/* 7. PNL */}
+                                            <div style={{ textAlign: 'right', fontSize: '0.75rem', fontWeight:'bold', color: pnlValue > 0 ? '#4caf50' : (pnlValue < 0 ? '#ef5350' : '#666') }}>
+                                                {hasPosition ? (pnlValue > 0 ? '+' : '') + pnlValue + '%' : '-'}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* 8. ACTIVE SIGNAL (Always Visible) */}
                                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                        <div style={{ 
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            color: sig.type === 'BUY' ? '#00ff00' : '#ff0000',
-                                            fontWeight: 'bold', fontSize: '0.75rem',
-                                            backgroundColor: 'rgba(0,0,0,0.3)',
-                                            padding: '4px 6px', borderRadius: '4px', minWidth: '40px'
-                                        }}>
-                                            {sig.type}
-                                        </div>
+                                        {item.signal ? (
+                                            <div style={{ 
+                                                color: item.signal === 'BUY' ? '#00ff00' : '#ff0000',
+                                                fontWeight: 'bold', fontSize: '0.7rem',
+                                                background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '3px'
+                                            }}>
+                                                {item.signal}
+                                            </div>
+                                        ) : null}
                                     </div>
                                 </div>
                             );
@@ -192,6 +264,10 @@ const ScannerModal = ({ onClose, interval, onSelectAsset, assetList }) => {
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                 .spinner { animation: spin 1s linear infinite; display: inline-block; }
                 @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+                ::-webkit-scrollbar { width: 4px; }
+                ::-webkit-scrollbar-track { background: #222; }
+                ::-webkit-scrollbar-thumb { background: #444; borderRadius: 2px; }
+                ::-webkit-scrollbar-thumb:hover { background: #555; }
             `}</style>
         </div>
     );

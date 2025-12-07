@@ -1,39 +1,50 @@
-# Create new file: app/services/forward_test_service.py
 from datetime import datetime
 from app import db
 from app.models import PaperTrade
-from app.services.data_manager import get_historical_data
+from app.services.data_manager import get_historical_data, TRACKED_ASSETS
 from app.services.signal_engine import analyze_market_snapshot
 import pandas as pd
 
-# Hardcoded list for Forward Testing
-TEST_ASSETS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'BNB/USD', 'ADA/USD']
+# List of assets to Forward Test
+#TEST_ASSETS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'BNB/USD', 'ADA/USD']
 INVESTMENT_AMOUNT = 1000.0
 
-def run_forward_test(interval):
+def run_forward_test(interval, api_key=None):
     """
     Runs SSA on all test assets for the given interval.
     If Signal found -> Execute Paper Trades.
     """
-    print(f"🧪 [ForwardTest] Running for {interval}...")
+    print(f"🧪 [ForwardTest] Running for {interval} on {len(TRACKED_ASSETS)} assets...")
     
-    for symbol in TEST_ASSETS:
-        # 1. Get Data (Fast fetch from DB)
-        ohlc = get_historical_data(symbol, interval, None, limit=500)
-        if not ohlc or len(ohlc) < 50: continue
+    for symbol in TRACKED_ASSETS:
+        # 1. Get Data (Pass API key for safety)
+        ohlc = get_historical_data(symbol, interval, api_key, limit=500)
+        
+        if not ohlc or len(ohlc) < 50:
+            print(f"   ⚠️ Skipping {symbol}: Insufficient Data ({len(ohlc) if ohlc else 0})")
+            continue
         
         df = pd.DataFrame(ohlc)
         closes = df['close'].values.flatten()
-        last_time = ohlc[-1]['datetime_obj'] # Ensure this is a datetime object
+        
+        # Ensure we have a valid datetime object for the last candle
+        last_candle = ohlc[-1]
+        last_time = last_candle.get('datetime_obj')
+        if not last_time:
+            # Fallback if datetime_obj is missing
+            last_time = datetime.utcfromtimestamp(last_candle['time'])
         
         # 2. Analyze
         result = analyze_market_snapshot(closes)
+        
         if not result or not result['signal']:
-            continue # No signal, do nothing
+            continue 
             
-        signal = result['signal'] # 'BUY' or 'SELL'
+        signal = result['signal'] 
         price = result['price']
         
+        print(f"   ⚡ SIGNAL DETECTED: {symbol} {signal} @ {price}")
+
         # 3. Execute Trade Logic
         if signal == 'BUY':
             handle_buy_signal(symbol, interval, price, last_time)
@@ -41,67 +52,49 @@ def run_forward_test(interval):
             handle_sell_signal(symbol, interval, price, last_time)
 
 def handle_buy_signal(symbol, interval, price, time):
-    # 1. STOP & REVERSE: Close any OPEN SHORT positions
+    # Close Shorts
     open_shorts = PaperTrade.query.filter_by(
         symbol=symbol, interval=interval, direction='SHORT', status='OPEN'
     ).all()
     
     for trade in open_shorts:
         close_trade(trade, price, time)
-        print(f"🔄 [ForwardTest] STOP & REVERSE: Closed SHORT for {symbol}")
 
-    # 2. ENTER LONG: Stack a new trade
-    # (We enter regardless if we already have longs, as requested)
+    # Open Long
     new_trade = PaperTrade(
-        symbol=symbol,
-        interval=interval,
-        direction='LONG',
-        status='OPEN',
-        entry_time=time,
-        entry_price=price,
-        invested_amount=INVESTMENT_AMOUNT,
+        symbol=symbol, interval=interval, direction='LONG', status='OPEN',
+        entry_time=time, entry_price=price, invested_amount=INVESTMENT_AMOUNT,
         quantity=INVESTMENT_AMOUNT / price
     )
     db.session.add(new_trade)
     db.session.commit()
-    print(f"🟢 [ForwardTest] OPEN LONG {symbol} @ {price}")
 
 def handle_sell_signal(symbol, interval, price, time):
-    # 1. STOP & REVERSE: Close any OPEN LONG positions
+    # Close Longs
     open_longs = PaperTrade.query.filter_by(
         symbol=symbol, interval=interval, direction='LONG', status='OPEN'
     ).all()
     
     for trade in open_longs:
         close_trade(trade, price, time)
-        print(f"🔄 [ForwardTest] STOP & REVERSE: Closed LONG for {symbol}")
 
-    # 2. ENTER SHORT: Stack a new trade
+    # Open Short
     new_trade = PaperTrade(
-        symbol=symbol,
-        interval=interval,
-        direction='SHORT',
-        status='OPEN',
-        entry_time=time,
-        entry_price=price,
-        invested_amount=INVESTMENT_AMOUNT,
+        symbol=symbol, interval=interval, direction='SHORT', status='OPEN',
+        entry_time=time, entry_price=price, invested_amount=INVESTMENT_AMOUNT,
         quantity=INVESTMENT_AMOUNT / price
     )
     db.session.add(new_trade)
     db.session.commit()
-    print(f"🔴 [ForwardTest] OPEN SHORT {symbol} @ {price}")
 
 def close_trade(trade, exit_price, exit_time):
     trade.status = 'CLOSED'
     trade.exit_price = exit_price
     trade.exit_time = exit_time
     
-    # Calculate PnL
     if trade.direction == 'LONG':
-        # (Exit - Entry) * Qty
         trade.pnl = (exit_price - trade.entry_price) * trade.quantity
     else:
-        # (Entry - Exit) * Qty (Shorting)
         trade.pnl = (trade.entry_price - exit_price) * trade.quantity
         
     trade.pnl_pct = (trade.pnl / trade.invested_amount) * 100

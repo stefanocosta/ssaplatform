@@ -6,35 +6,40 @@ from flask import current_app
 from app import db
 from app.models import MarketData
 from app.services.data_manager import save_to_db, TRACKED_ASSETS, track_api_call
-# --- NEW IMPORT FOR FORWARD TESTING ---
 from app.services.forward_test_service import run_forward_test 
 
 def update_market_data():
     """
-    1. Batch fetch 1min data.
-    2. Save 1min data.
+    1. Check Time & Determine Forward Test Triggers (IMMEDIATELY).
+    2. Batch fetch 1min data.
     3. Aggregate to higher timeframes.
-    4. Run Forward Testing Logic.
+    4. Execute Forward Testing if triggered.
     """
-    # [DEBUG] Print to prove the scheduler triggered the job
-    print(f"⏰ Daemon Triggered at {datetime.now()}")
+    # 1. CAPTURE TIME AT START (Fixes the skipping issue)
+    now = datetime.utcnow()
+    minute = now.minute
+    hour = now.hour
+    
+    # Decide triggers NOW, before the long data fetch begins
+    trigger_15m = (minute % 15 == 0)
+    trigger_1h = (minute == 0)
+    trigger_4h = (minute == 0 and hour % 4 == 0)
+
+    print(f"⏰ Daemon Started at {now.strftime('%H:%M:%S')} | Triggers: 15m={trigger_15m}, 1h={trigger_1h}")
 
     if not current_app:
         print("❌ [DAEMON ERROR] No active Flask Application Context!")
         return
 
     api_key = current_app.config.get('TWELVE_DATA_API_KEY')
-    
-    if not api_key: 
-        print("❌ [DAEMON ERROR] No API Key found in config! Aborting.")
-        return
+    if not api_key: return
 
+    # 2. DATA FETCHING LOOP
     chunk_size = 8
     asset_chunks = [TRACKED_ASSETS[i:i + chunk_size] for i in range(0, len(TRACKED_ASSETS), chunk_size)]
 
     for chunk in asset_chunks:
         symbols_str = ",".join(chunk)
-        
         track_api_call(f"Daemon Batch ({len(chunk)} assets)")
 
         url = "https://api.twelvedata.com/time_series"
@@ -50,10 +55,9 @@ def update_market_data():
             resp = r.json()
             
             if 'code' in resp and isinstance(resp['code'], int) and resp['code'] >= 400:
-                print(f"⚠️ API Error (Skipping Batch): {resp.get('message')}")
+                print(f"⚠️ API Error: {resp.get('message')}")
                 continue
 
-            # Normalize response if single asset
             if len(chunk) == 1: resp = {chunk[0]: resp}
 
             for sym, data in resp.items():
@@ -62,9 +66,7 @@ def update_market_data():
                     for d in data['values']:
                             vol = d.get('volume')
                             volume_val = float(vol) if vol else 0.0
-                            
-                            date_str = d['datetime']
-                            ts = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                            ts = datetime.strptime(d['datetime'], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
                             clean_values.append({
                             "datetime_obj": ts,
@@ -84,25 +86,19 @@ def update_market_data():
         except Exception as e:
             print(f"❌ Daemon Batch Failed: {e}")
 
-    # ==================================================================
-    # FORWARD TESTING TRIGGER (NEW LOGIC)
-    # ==================================================================
+    # 3. EXECUTE FORWARD TESTS (Based on start time)
     try:
-        now = datetime.utcnow()
-        minute = now.minute
-        hour = now.hour
+        if trigger_15m:
+            print("🚀 Triggering 15m Forward Test...")
+            run_forward_test('15min', api_key) # Pass API key for robustness
 
-        # 1. Check 15m (Runs at 0, 15, 30, 45)
-        if minute % 15 == 0:
-            run_forward_test('15min')
-
-        # 2. Check 1h (Runs at minute 0)
-        if minute == 0:
-            run_forward_test('1h')
+        if trigger_1h:
+            print("🚀 Triggering 1h Forward Test...")
+            run_forward_test('1h', api_key)
             
-        # 3. Check 4h (Runs at minute 0, hours 0, 4, 8, 12, 16, 20)
-        if minute == 0 and hour % 4 == 0:
-            run_forward_test('4h')
+        if trigger_4h:
+            print("🚀 Triggering 4h Forward Test...")
+            run_forward_test('4h', api_key)
             
     except Exception as e:
         print(f"❌ Forward Test Error: {e}")
@@ -112,7 +108,6 @@ def update_market_data():
 def resample_and_save(symbol):
     try:
         since = datetime.utcnow() - pd.Timedelta(hours=24)
-        
         stmt = db.select(MarketData).filter(
             MarketData.symbol == symbol,
             MarketData.interval == '1min',
@@ -123,24 +118,13 @@ def resample_and_save(symbol):
         if not results: return
 
         data_list = [{
-            'time': r.time,
-            'open': r.open,
-            'high': r.high,
-            'low': r.low,
-            'close': r.close,
-            'volume': r.volume
+            'time': r.time, 'open': r.open, 'high': r.high, 'low': r.low, 'close': r.close, 'volume': r.volume
         } for r in results]
 
         df = pd.DataFrame(data_list)
         df.set_index('time', inplace=True)
 
-        aggregations = {
-            '5min': '5min',
-            '15min': '15min', 
-            '30min': '30min',
-            '1h': '1h',
-            '4h': '4h'
-        }
+        aggregations = {'5min': '5min', '15min': '15min', '30min': '30min', '1h': '1h', '4h': '4h'}
 
         for interval_name, pandas_rule in aggregations.items():
             ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
@@ -150,13 +134,9 @@ def resample_and_save(symbol):
             for time_idx, row in resampled.tail(1).iterrows(): 
                     to_save.append({
                     "datetime_obj": time_idx.replace(tzinfo=timezone.utc),
-                    "open": float(row['open']),
-                    "high": float(row['high']),
-                    "low": float(row['low']),
-                    "close": float(row['close']),
-                    "volume": float(row['volume'])
+                    "open": float(row['open']), "high": float(row['high']), "low": float(row['low']),
+                    "close": float(row['close']), "volume": float(row['volume'])
                 })
-            
             save_to_db(symbol, interval_name, to_save)
     except Exception as e:
         print(f"❌ Resample Error ({symbol}): {e}")

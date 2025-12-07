@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 # Import extensions/models
 from . import db 
-from app.models import User 
+from app.models import User, PaperTrade 
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from sqlalchemy import select 
 from scipy.signal import find_peaks
@@ -302,101 +302,136 @@ def get_chart_data():
 @jwt_required()
 def scan_market():
     interval = request.args.get('interval', '1day')
-    # Default parameters matching your frontend defaults
     use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
     try:
         l_param = int(request.args.get('l', 30))
     except ValueError:
         l_param = 30
 
-    active_signals = []
+    scanner_results = []
 
     # Loop through ALL tracked assets
     for symbol in TRACKED_ASSETS:
-        # 1. Fetch Data from DB (Fast, no API cost)
+        # 1. Fetch Data
         ohlc_data = get_historical_data(symbol, interval, None, limit=500)
         
-        if not ohlc_data or len(ohlc_data) < 30:
+        if not ohlc_data or len(ohlc_data) < 60:
             continue
 
-        # 2. Prepare Data for SSA
+        # 2. Prepare Data
         df = pd.DataFrame(ohlc_data)
         close_prices = df['close'].values.flatten()
-        
-        # 3. Perform SSA (Identical to chart-data logic)
         N = len(close_prices)
+        
         if use_adaptive_l:
             L = 39 
         else:
             L = min(l_param, N // 2)
 
         try:
+            # 3. Perform SSA
             components = ssa_service.ssa_decomposition(close_prices, L)
-            
-            # Extract components
             trend = components[0]
             cyclic = components[1:min(3, L)].sum(axis=0)
             noise = components[min(3, L):min(6, L)].sum(axis=0)
-            
             reconstructed = trend + cyclic
             
-            # 4. CALCULATE PERCENTAGE POSITIONS (0% = Valley, 100% = Peak)
+            # Stats
             cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
             fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
-
-            # 5. SIGNAL LOGIC
+            
+            # Directions
             curr_price = close_prices[-1]
             curr_trend = trend[-1]
-            prev_trend = trend[-2] # Previous trend value
-
-            curr_recon = reconstructed[-1]
-            curr_noise = noise[-1]
-            prev_noise = noise[-2]
-
-            # --- NEW: Calculate Trend Direction ---
+            prev_trend = trend[-2]
             trend_direction = "UP" if curr_trend > prev_trend else "DOWN"
 
-            # Hotspot Logic
-            is_hotspot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
-            is_hotspot_sell = (curr_recon > curr_trend) and (curr_price > curr_recon)
-            
-            # Noise Logic (Turning Point)
-            is_noise_buy = (curr_noise < 0) and (curr_noise >= prev_noise)
-            is_noise_sell = (curr_noise > 0) and (curr_noise <= prev_noise)
-            
-            # Combined Signal
-            signal_type = None
-            if is_hotspot_buy and is_noise_buy:
-                signal_type = "BUY"
-            elif is_hotspot_sell and is_noise_sell:
-                signal_type = "SELL"
-            
-            # --- Forecast Direction for Scanner ---
             forecast_dir = "FLAT"
             try:
-                # Forecast next 20 bars to determine direction
-                f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=40, min_component=1)
+                f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=20, min_component=1)
                 if len(f_vals) > 0:
                     forecast_dir = "UP" if f_vals[-1] > f_vals[0] else "DOWN"
-            except Exception:
+            except:
                 pass
 
-            if signal_type:
-                active_signals.append({
-                    "symbol": symbol,
-                    "type": signal_type,
-                    "trend_dir": trend_direction,
-                    "forecast_dir": forecast_dir,
-                    "cycle_pct": int(cyc_pos),   
-                    "fast_pct": int(fast_pos),   
-                    "price": curr_price,
-                    "time": ohlc_data[-1]['time']
-                })
-                
+            # 4. FIND POSITION STATUS (Look back 60 bars)
+            # We want to know: Is there an active trade? What is the PnL?
+            
+            active_signal_type = None # "BUY" or "SELL" if happening right NOW
+            position_type = "NEUTRAL" # "LONG" or "SHORT" from history
+            bars_ago = 0
+            entry_price = 0.0
+            pnl_pct = 0.0
+
+            # Check current bar first for immediate signal
+            c_price = close_prices[-1]
+            c_trend = trend[-1]
+            c_recon = reconstructed[-1]
+            c_noise = noise[-1]
+            p_noise = noise[-2]
+
+            is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
+            is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
+            is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
+            is_noise_sell = (c_noise > 0) and (c_noise <= p_noise)
+
+            if is_hot_buy and is_noise_buy:
+                active_signal_type = "BUY"
+            elif is_hot_sell and is_noise_sell:
+                active_signal_type = "SELL"
+
+            # Lookback loop to find the "Holding" position
+            # We iterate backwards from N-1 down to N-60
+            for i in range(N-1, max(0, N-60), -1):
+                p_i = close_prices[i]
+                t_i = trend[i]
+                r_i = reconstructed[i]
+                n_i = noise[i]
+                pn_i = noise[i-1]
+
+                # Check Signal Conditions at bar i
+                ib_hot = (r_i < t_i) and (p_i < r_i)
+                is_hot = (r_i > t_i) and (p_i > r_i)
+                ib_noise = (n_i < 0) and (n_i >= pn_i)
+                is_noise = (n_i > 0) and (n_i <= pn_i)
+
+                if ib_hot and ib_noise:
+                    position_type = "LONG"
+                    bars_ago = (N - 1) - i
+                    entry_price = p_i
+                    # Calc Unrealized PnL
+                    pnl_pct = ((curr_price - entry_price) / entry_price) * 100
+                    break
+                elif is_hot and is_noise:
+                    position_type = "SHORT"
+                    bars_ago = (N - 1) - i
+                    entry_price = p_i
+                    # Calc Unrealized PnL (Inverse for short)
+                    pnl_pct = ((entry_price - curr_price) / entry_price) * 100
+                    break
+            
+            # Append result for EVERY asset
+            scanner_results.append({
+                "symbol": symbol,
+                "price": curr_price,
+                "trend_dir": trend_direction,
+                "forecast_dir": forecast_dir,
+                "cycle_pct": int(cyc_pos),
+                "fast_pct": int(fast_pos),
+                "signal": active_signal_type, # NEW KEY (ScannerModal expects this)
+                "position": position_type,    # NEW KEY
+                "bars_ago": bars_ago,         # NEW KEY
+                "pnl_pct": round(pnl_pct, 2)  # NEW KEY
+            })
+
         except Exception as e:
+            print(f"Scan error {symbol}: {e}")
             continue
 
-    return jsonify(active_signals)
+    # Sort: Active signals first, then by PnL desc
+    scanner_results.sort(key=lambda x: (x['signal'] is None, -x['pnl_pct']))
+
+    return jsonify(scanner_results)
 
 @bp.route('/analyze', methods=['GET'])
 @jwt_required()
@@ -545,8 +580,6 @@ def analyze_asset():
     except Exception as e:
         print(f"Analysis error: {e}")
         return jsonify({"error": str(e)}), 500
-    
-from app.models import PaperTrade
 
 @bp.route('/forward-test-results', methods=['GET'])
 @jwt_required()
