@@ -4,6 +4,7 @@ from app.models import PaperTrade
 from app.services.data_manager import get_historical_data, TRACKED_ASSETS
 from app.services.signal_engine import analyze_market_snapshot
 import pandas as pd
+import time
 
 # List of assets to Forward Test
 #TEST_ASSETS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'BNB/USD', 'ADA/USD']
@@ -20,6 +21,8 @@ def run_forward_test(interval, api_key=None):
         # 1. Get Data (Pass API key for safety)
         ohlc = get_historical_data(symbol, interval, api_key, limit=500)
         
+        time.sleep(1.5)
+
         if not ohlc or len(ohlc) < 50:
             print(f"   ⚠️ Skipping {symbol}: Insufficient Data ({len(ohlc) if ohlc else 0})")
             continue
@@ -41,7 +44,7 @@ def run_forward_test(interval, api_key=None):
             continue 
             
         signal = result['signal'] 
-        price = result['price']
+        price = float(result['price'])
         
         print(f"   ⚡ SIGNAL DETECTED: {symbol} {signal} @ {price}")
 
