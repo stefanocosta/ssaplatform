@@ -25,7 +25,6 @@ const ForwardTestModal = ({ onClose }) => {
 
     if (!data && loading) return null;
 
-    // Helper for color coding arrows/text
     const getDirColor = (dir) => {
         if (dir === 'UP') return '#00c853';
         if (dir === 'DOWN') return '#ff3d00';
@@ -33,8 +32,8 @@ const ForwardTestModal = ({ onClose }) => {
     };
 
     const getCycleColor = (val) => {
-        if (val > 80) return '#ff3d00'; // Overbought
-        if (val < 20) return '#00c853'; // Oversold
+        if (val > 80) return '#ff3d00';
+        if (val < 20) return '#00c853';
         return '#aaa';
     };
 
@@ -44,59 +43,64 @@ const ForwardTestModal = ({ onClose }) => {
             backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000,
             display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
+            {/* 1. RESPONSIVE CONTAINER: width 95% for mobile, max 1100px for desktop */}
             <div style={{
-                width: '1100px', // WIDENED to fit columns
-                height: '80vh', backgroundColor: '#1e1e1e',
+                width: '95%', maxWidth: '1100px', 
+                height: '85vh', backgroundColor: '#1e1e1e',
                 borderRadius: '12px', display: 'flex', flexDirection: 'column',
                 border: '1px solid #444', boxShadow: '0 0 20px black'
             }}>
                 {/* Header */}
                 <div style={{ padding: '20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <h2 style={{ color: 'white', margin: 0 }}>Forward Test Results</h2>
-                        <div style={{ fontSize: '0.85rem', color: '#888', marginTop: '5px' }}>
-                            Simulated $1000 entries | Showing market snapshot @ Entry
+                        <h2 style={{ color: 'white', margin: 0, fontSize: '1.2rem' }}>Forward Test Results</h2>
+                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '5px' }}>
+                            Simulated $1000 entries | Market Snapshot @ Entry
                         </div>
                     </div>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X /></button>
                 </div>
 
-                {/* Summary Cards */}
-                <div style={{ display: 'flex', gap: '20px', padding: '20px', backgroundColor: '#252525' }}>
-                    <div style={{ flex: 1, background: '#333', padding: '15px', borderRadius: '8px' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.8rem' }}>NET PNL</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: data?.summary.total_pnl >= 0 ? '#00c853' : '#ff3d00' }}>
+                {/* 2. WRAPPING SUMMARY CARDS: flexWrap lets them stack on mobile */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '15px', backgroundColor: '#252525' }}>
+                    <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
+                        <div style={{ color: '#aaa', fontSize: '0.75rem' }}>NET PNL</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: data?.summary.total_pnl >= 0 ? '#00c853' : '#ff3d00' }}>
                             ${data?.summary.total_pnl}
                         </div>
                     </div>
-                    <div style={{ flex: 1, background: '#333', padding: '15px', borderRadius: '8px' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.8rem' }}>WIN RATE</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>
+                    <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
+                        <div style={{ color: '#aaa', fontSize: '0.75rem' }}>WIN RATE</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
                             {data?.summary.win_rate}%
                         </div>
                     </div>
-                    <div style={{ flex: 1, background: '#333', padding: '15px', borderRadius: '8px' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.8rem' }}>CLOSED TRADES</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>
+                    <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
+                        <div style={{ color: '#aaa', fontSize: '0.75rem' }}>CLOSED TRADES</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
                             {data?.summary.total_trades}
                         </div>
                     </div>
                 </div>
 
-                {/* Table */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', color: '#ddd', fontSize: '0.85rem' }}>
-                        <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', textAlign: 'left' }}>
+                {/* 3. SCROLLABLE TABLE CONTAINER */}
+                <div style={{ flex: 1, overflow: 'auto', padding: '0' }}>
+                    <table style={{ 
+                        width: '100%', 
+                        minWidth: '800px', // Forces horizontal scroll on small screens
+                        borderCollapse: 'collapse', 
+                        color: '#ddd', 
+                        fontSize: '0.85rem' 
+                    }}>
+                        <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', textAlign: 'left', zIndex: 10 }}>
                             <tr style={{ borderBottom: '1px solid #444', color: '#888' }}>
-                                <th style={{ padding: '10px' }}>Asset</th>
+                                <th style={{ padding: '15px 10px' }}>Asset</th>
                                 <th>Int</th>
                                 <th>Dir</th>
-                                {/* NEW COLUMNS */}
                                 <th>TRND</th>
                                 <th>CYC</th>
                                 <th>FST</th>
                                 <th>FCST</th>
-                                {/* END NEW COLUMNS */}
                                 <th>Status</th>
                                 <th>Entry</th>
                                 <th>Time</th>
@@ -118,25 +122,13 @@ const ForwardTestModal = ({ onClose }) => {
                                             {trade.direction}
                                         </span>
                                     </td>
-                                    
-                                    {/* --- NEW CELLS --- */}
-                                    <td style={{ fontWeight: 'bold', color: getDirColor(trade.trend) }}>
-                                        {trade.trend}
-                                    </td>
-                                    <td style={{ fontWeight: 'bold', color: getCycleColor(trade.cycle) }}>
-                                        {trade.cycle}
-                                    </td>
-                                    <td style={{ fontWeight: 'bold', color: getCycleColor(trade.fast) }}>
-                                        {trade.fast}
-                                    </td>
-                                    <td style={{ fontWeight: 'bold', color: getDirColor(trade.forecast) }}>
-                                        {trade.forecast}
-                                    </td>
-                                    {/* ---------------- */}
-
+                                    <td style={{ fontWeight: 'bold', color: getDirColor(trade.trend) }}>{trade.trend}</td>
+                                    <td style={{ fontWeight: 'bold', color: getCycleColor(trade.cycle) }}>{trade.cycle}</td>
+                                    <td style={{ fontWeight: 'bold', color: getCycleColor(trade.fast) }}>{trade.fast}</td>
+                                    <td style={{ fontWeight: 'bold', color: getDirColor(trade.forecast) }}>{trade.forecast}</td>
                                     <td style={{ color: trade.status === 'OPEN' ? '#29b6f6' : '#888' }}>{trade.status}</td>
                                     <td>{trade.entry_price.toFixed(2)}</td>
-                                    <td style={{ fontSize: '0.8rem', color: '#aaa' }}>{trade.entry_date}</td>
+                                    <td style={{ fontSize: '0.8rem', color: '#aaa', whiteSpace: 'nowrap' }}>{trade.entry_date}</td>
                                     <td>{trade.exit_price ? trade.exit_price.toFixed(2) : '-'}</td>
                                     <td style={{ fontWeight: 'bold', color: trade.pnl > 0 ? '#00c853' : (trade.pnl < 0 ? '#ff3d00' : '#888') }}>
                                         {trade.status === 'CLOSED' ? `$${trade.pnl} (${trade.pnl_pct}%)` : '-'}

@@ -14,10 +14,6 @@ TRACKED_ASSETS = ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'DOGE/US
 _api_counter = 0
 _last_reset_time = time.time()
 
-# --- CONFIGURATION --- 
-COOLDOWN_1MIN = 55 
-FETCH_COOLDOWN = {}
-
 def track_api_call(source="Unknown"):
     global _api_counter, _last_reset_time
     current_time = time.time()
@@ -27,19 +23,13 @@ def track_api_call(source="Unknown"):
     _api_counter += 1
     print(f"💰 [API] Call #{_api_counter}/55 | Source: {source}")
 
-def get_interval_seconds(interval):
-    mapping = {
-        '1min': 60, '5min': 300, '15min': 900, '30min': 1800,
-        '1h': 3600, '2h': 7200, '4h': 14400, '1day': 86400,
-        '1week': 604800, '1month': 2592000
-    }
-    return mapping.get(interval, 60)
-
 def get_historical_data(symbol, interval, api_key, limit=300):
+    # 1. NON-TRACKED ASSETS: Fallback to direct API call
     if symbol not in TRACKED_ASSETS:
         return fetch_from_api(symbol, interval, api_key, limit, source="Custom")
 
-    # 1. Fetch Main History from DB
+    # 2. TRACKED ASSETS: STRICT DB FETCH
+    # We rely entirely on the background daemon to populate this data.
     data_query = MarketData.query.filter_by(
         symbol=symbol, 
         interval=interval
@@ -49,104 +39,48 @@ def get_historical_data(symbol, interval, api_key, limit=300):
     if len(data_query) >= 1: 
         db_data = [row.to_dict() for row in data_query]
 
-    # --- FIX: Normalize Keys to Unix Timestamp (Int) ---
+    # Normalize Keys to Unix Timestamp (Int) for consistency
     data_map = {}
-    last_db_timestamp = None
-    
     for d in db_data:
         raw_time = d['time']
-        
-        # Convert to Unix Timestamp for the Key/Sorting
         if hasattr(raw_time, 'timestamp'):
-            # It is a datetime object
             ts = int(raw_time.replace(tzinfo=timezone.utc).timestamp())
-            d['time'] = ts # Normalize record
-            d['datetime_obj'] = raw_time # Keep original
+            d['time'] = ts
+            d['datetime_obj'] = raw_time
         else:
-            # It is already an int
             ts = int(raw_time)
             d['time'] = ts
-            
         data_map[ts] = d
-        last_db_timestamp = raw_time 
 
-    # =========================================================
-    # UNIVERSAL GAP HEALER
-    # =========================================================
-    if db_data and last_db_timestamp:
-        if hasattr(last_db_timestamp, 'timestamp'):
-             last_ts_val = last_db_timestamp.replace(tzinfo=timezone.utc).timestamp()
-        else:
-             last_ts_val = last_db_timestamp
-             
-        time_diff = (datetime.utcnow().timestamp() - last_ts_val)
-        interval_secs = get_interval_seconds(interval)
-        allowed_gap = interval_secs + 300 
+    # 3. SYNTHETIC TIP GENERATION
+    # Even though we don't fetch new data, we still need to build the
+    # "Live Candle" for higher timeframes (15m, 1h, etc.) using the 
+    # latest 1-min data available in the DB.
+    if interval in ['5min', '15min', '30min', '1h', '4h', '1day', '1week']:
+        synthetic_candle = generate_synthetic_tip(symbol, interval)
+        if synthetic_candle:
+            data_map[synthetic_candle['time']] = synthetic_candle
         
-        # --- 1. GAP DETECTED ---
-        if time_diff > allowed_gap:
-            track_api_call(f"GapRepair {symbol} {interval} (Diff: {int(time_diff)}s)")
-            repair_candles = fetch_from_api(symbol, '1min', api_key, outputsize=1000, source=f"GapRepair {symbol}")
-            
-            if repair_candles:
-                save_to_db(symbol, '1min', repair_candles)
-                if interval == '1min':
-                    for c in repair_candles: data_map[c['time']] = c
-                
-                repair_aggregates(symbol)
-                
-                if interval != '1min':
-                    # Reload DB to get newly aggregated candles
-                    new_agg_query = MarketData.query.filter_by(symbol=symbol, interval=interval).order_by(MarketData.time.asc()).all()
-                    reloaded = [row.to_dict() for row in new_agg_query]
-                    for d in reloaded:
-                        t = d['time']
-                        ts = int(t.replace(tzinfo=timezone.utc).timestamp()) if hasattr(t, 'timestamp') else int(t)
-                        d['time'] = ts
-                        data_map[ts] = d
-
-        # --- 2. SYNTHETIC TIP GENERATION ---
-        if interval in ['5min', '15min', '30min', '1h', '4h', '1day', '1week']:
-            synthetic_candle = generate_synthetic_tip(symbol, interval)
-            if synthetic_candle:
-                data_map[synthetic_candle['time']] = synthetic_candle
-        
-        # --- 3. HOT FETCH (1min Only) ---
-        elif interval == '1min':
-            cache_key = f"{symbol}_{interval}"
-            current_time = time.time()
-            last_fetch_time = FETCH_COOLDOWN.get(cache_key, 0)
-            
-            if (current_time - last_fetch_time > COOLDOWN_1MIN) and (time_diff > 130):
-                track_api_call(f"HotFetch 1m {symbol}")
-                latest_candles = fetch_from_api(symbol, interval, api_key, outputsize=1, source=f"HotFetch")
-                
-                backoff_penalty = 0
-                if latest_candles and len(latest_candles) > 0:
-                    api_tip_time = latest_candles[-1]['time']
-                    
-                    if api_tip_time <= last_ts_val:
-                         backoff_penalty = 300
-                    else:
-                        for candle in latest_candles:
-                            data_map[candle['time']] = candle
-                        save_to_db(symbol, interval, latest_candles)
-                
-                FETCH_COOLDOWN[cache_key] = time.time() + backoff_penalty
-
     final_data = sorted(data_map.values(), key=lambda x: x['time'])
 
+    # 4. INITIAL SEEDING (Only if DB is completely empty)
     if not final_data:
-        api_data = fetch_from_api(symbol, interval, api_key, outputsize=limit+50, source="Backfill")
+        # This only happens once when you add a NEW asset.
+        api_data = fetch_from_api(symbol, interval, api_key, outputsize=limit+50, source="Initial Backfill")
         if api_data:
             save_to_db(symbol, interval, api_data)
-            repair_aggregates(symbol) 
+            # If we just seeded 1min data, we should probably repair aggregates too
+            if interval == '1min':
+                 repair_aggregates(symbol)
             return api_data 
         return []
 
     return final_data[-limit:]
 
 def repair_aggregates(symbol):
+    """
+    Recalculates 5m, 15m, 30m, 1h history from the last 24h of 1min data.
+    """
     try:
         since = datetime.utcnow() - timedelta(hours=24)
         stmt = db.select(MarketData).filter(
@@ -184,8 +118,13 @@ def repair_aggregates(symbol):
         print(f"Aggregate Repair Failed: {e}")
 
 def generate_synthetic_tip(symbol, interval):
+    """
+    Constructs the latest 'forming' candle for a higher timeframe
+    using the raw 1-minute data from the database.
+    """
     now = datetime.utcnow()
     
+    # Calculate the start time of the current candle
     if interval == '5min':
         minute_block = (now.minute // 5) * 5
         start_time = now.replace(minute=minute_block, second=0, microsecond=0)
@@ -207,6 +146,7 @@ def generate_synthetic_tip(symbol, interval):
     else:
         return None
 
+    # Fetch 1-min candles from DB that belong to this timeframe
     candles = MarketData.query.filter(
         MarketData.symbol == symbol,
         MarketData.interval == '1min',
