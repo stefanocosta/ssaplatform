@@ -300,7 +300,17 @@ def get_chart_data():
 
 # --- HELPER FOR STALENESS ---
 def get_interval_minutes(interval):
-    mapping = { '1min': 1, '5min': 5, '15min': 15, '30min': 30, '1h': 60, '4h': 240, '1day': 1440 }
+    # Added '1week' to the mapping (10080 minutes) to fix scanner filtering
+    mapping = { 
+        '1min': 1, 
+        '5min': 5, 
+        '15min': 15, 
+        '30min': 30, 
+        '1h': 60, 
+        '4h': 240, 
+        '1day': 1440,
+        '1week': 10080 
+    }
     return mapping.get(interval, 60)
 
 @bp.route('/scan', methods=['GET'])
