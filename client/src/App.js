@@ -13,23 +13,12 @@ import './App.css';
 // --- INTERNAL COMPONENT: MOBILE ALERT POPUP ---
 const AlertPopup = ({ alerts, onClose }) => {
     useEffect(() => {
-        // 1. Play Sound
-        const audio = new Audio('/alert.mp3');
-        audio.currentTime = 0; 
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.warn("Audio autoplay blocked:", error);
-            });
-        }
-
-        // 2. Auto-Close
+        // Auto-Close after 60 seconds
         const timer = setTimeout(() => {
             onClose();
         }, 60000);
-
         return () => clearTimeout(timer);
-    }, [alerts, onClose]);
+    }, [onClose]);
 
     return (
         <div style={{
@@ -63,7 +52,7 @@ const AlertPopup = ({ alerts, onClose }) => {
                     </div>
                 ))}
             </div>
-            <button onClick={onClose} style={{ width: '100%', marginTop: '15px', padding: '10px', backgroundColor: '#444', border: 'none', borderRadius: '6px', color: 'white', fontWeight: 'bold' }}>DISMISS</button>
+            <button onClick={onClose} style={{ width: '100%', marginTop: '15px', padding: '10px', backgroundColor: '#444', border: 'none', borderRadius: '6px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>DISMISS</button>
         </div>
     );
 };
@@ -101,6 +90,8 @@ function Platform() {
   // Refs
   const monitorTimeoutRef = useRef(null);
   const processedSignalsRef = useRef(new Set()); 
+  const audioRef = useRef(new Audio('/alert.mp3')); // Single audio instance
+
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
   const assetCategories = {
@@ -111,7 +102,6 @@ function Platform() {
 
   // --- EFFECTS ---
   
-  // Handle Resize for Mobile Detection
   useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 768);
       window.addEventListener('resize', handleResize);
@@ -121,7 +111,7 @@ function Platform() {
   useEffect(() => { setLookupCount(c => c + 1); }, [inputInterval, inputLValue, inputUseAdaptiveL]); 
   useEffect(() => { if (inputSymbol !== 'CUSTOM') { setFinalSymbol(inputSymbol.toUpperCase()); setLookupCount(c => c + 1); } }, [inputSymbol]);
 
-  // --- MONITORING LOGIC (Same as before) ---
+  // --- MONITORING LOGIC ---
   const getDelayToNextScan = (intervalStr) => {
       const now = new Date();
       const minutes = now.getMinutes();
@@ -158,8 +148,20 @@ function Platform() {
           });
 
           if (notifyList.length > 0) {
+             // 1. Show Popup
              setActiveAlerts(notifyList);
              setAlertTimestamp(Date.now());
+             
+             // 2. Play Sound (Using unlocked ref)
+             try {
+                 audioRef.current.currentTime = 0;
+                 const playPromise = audioRef.current.play();
+                 if (playPromise !== undefined) {
+                     playPromise.catch(e => console.error("Audio blocked inside scan loop:", e));
+                 }
+             } catch(e) { console.error(e); }
+
+             // 3. Desktop Notification
              const body = notifyList.map(s => `${s.symbol}: ${s.signal} @ ${s.price}`).join('\n');
              if ('Notification' in window && Notification.permission === "granted") {
                  try { new Notification(`🚨 ${notifyList.length} Signals!`, { body, icon: '/favicon.ico' }); } catch (e) {}
@@ -193,11 +195,16 @@ function Platform() {
   }, [isMonitoring]);
 
   const toggleMonitor = (interval) => {
+      // Audio Warm-up (Unlock)
       try {
-          const audio = new Audio('/alert.mp3');
-          audio.volume = 0.05; 
-          audio.play().catch(e => console.log("Audio warm-up blocked", e));
+          audioRef.current.volume = 0; 
+          audioRef.current.play().then(() => {
+              audioRef.current.pause();
+              audioRef.current.currentTime = 0;
+              audioRef.current.volume = 1.0; 
+          }).catch(e => console.log("Audio unlock failed", e));
       } catch (e) { }
+
       setMonitorInterval(interval);
       setIsMonitoring(true);
       setShowMonitorModal(false);
@@ -229,7 +236,7 @@ function Platform() {
         {/* CONTROL BAR */}
         <div style={{ flex: '0 0 auto', color: '#d1d4dc', background: '#2d2d2d', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', zIndex: 20, borderBottom: '1px solid #444' }}>
           
-          {/* 1. INPUTS (Always Visible) */}
+          {/* 1. INPUTS */}
           <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span>
                 <label style={{ marginRight: '5px' }}>Sym:</label>
@@ -254,15 +261,14 @@ function Platform() {
                 </select>
             </span>
             
-            {/* Toggles - Compact on mobile */}
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label title="HotSpots" style={{ color: inputShowHotspots ? '#ffeb3b' : '#928f8fff', cursor: 'pointer' }}><input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{display:'none'}}/> HotSpots</label>
-                <label title="Forecast" style={{ color: inputShowForecast ? '#ff00ff' : '#928f8fff', cursor: 'pointer' }}><input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} style={{display:'none'}}/> Forecast</label>
-                <label title="Auto Update" style={{ color: inputAutoUpdate ? '#00bcd4' : '#928f8fff', cursor: 'pointer' }}><input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{display:'none'}}/> Auto</label>
+                <label title="HotSpots" style={{ color: inputShowHotspots ? '#ffeb3b' : '#555', cursor: 'pointer' }}><input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{display:'none'}}/> HS</label>
+                <label title="Forecast" style={{ color: inputShowForecast ? '#ff00ff' : '#555', cursor: 'pointer' }}><input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} style={{display:'none'}}/> FC</label>
+                <label title="Auto Update" style={{ color: inputAutoUpdate ? '#00bcd4' : '#555', cursor: 'pointer' }}><input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{display:'none'}}/> A</label>
             </span>
           </span>
 
-          {/* 2. CHEVRON TOGGLE (Mobile Only) */}
+          {/* 2. CHEVRON (Mobile Only) */}
           {isMobile && (
               <button 
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -275,7 +281,7 @@ function Platform() {
               </button>
           )}
 
-          {/* 3. ACTION BUTTONS (Collapsible on Mobile) */}
+          {/* 3. ACTION BUTTONS (Added cursor: pointer back!) */}
           <div style={{ 
               display: (isMobile && !isMobileMenuOpen) ? 'none' : 'flex', 
               width: isMobile ? '100%' : 'auto', 
@@ -284,13 +290,10 @@ function Platform() {
               justifyContent: isMobile ? 'space-between' : 'flex-end',
               marginTop: isMobile ? '10px' : '0'
           }}>
-            <button onClick={() => setShowForwardTest(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#00c853', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px' }}><FlaskConical size={16} /> Test</button>
-            
-            <button onClick={() => isMonitoring ? (window.confirm("Stop?") && stopMonitor()) : setShowMonitorModal(true)} className={isMonitoring ? 'flashing-monitor' : ''} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: isMonitoring ? '#e65100' : 'transparent', color: isMonitoring ? 'white' : '#ff9800', border: '1px solid #ff9800', borderRadius: '4px', padding: '5px 12px' }}><Activity size={16} /> MON</button>
-
-            <button onClick={() => setShowAnalysis(!showAnalysis)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#e600adff', color: '#d1d4dc', border: '1px solid #444', borderRadius: '4px', padding: '5px 12px' }}><Activity size={16} /> DA</button>
-
-            <button onClick={() => setShowScanner(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#0078d4', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px' }}><Radar size={16} /> Scan</button>
+            <button onClick={() => setShowForwardTest(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#00c853', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><FlaskConical size={16} /> Test</button>
+            <button onClick={() => isMonitoring ? (window.confirm("Stop?") && stopMonitor()) : setShowMonitorModal(true)} className={isMonitoring ? 'flashing-monitor' : ''} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: isMonitoring ? '#e65100' : 'transparent', color: isMonitoring ? 'white' : '#ff9800', border: '1px solid #ff9800', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><Activity size={16} /> MON</button>
+            <button onClick={() => setShowAnalysis(!showAnalysis)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#e600adff', color: '#d1d4dc', border: '1px solid #444', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><Activity size={16} /> DA</button>
+            <button onClick={() => setShowScanner(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#0078d4', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><Radar size={16} /> Scan</button>
           </div>
 
         </div>
