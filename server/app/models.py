@@ -76,3 +76,8 @@ class PaperTrade(db.Model):
     exit_price = db.Column(db.Float, nullable=True)
     pnl = db.Column(db.Float, nullable=True) 
     pnl_pct = db.Column(db.Float, nullable=True)
+
+    trend_snapshot = db.Column(db.String(10), nullable=True)
+    forecast_snapshot = db.Column(db.String(10), nullable=True)
+    cycle_snapshot = db.Column(db.Integer, nullable=True)
+    fast_snapshot = db.Column(db.Integer, nullable=True)
