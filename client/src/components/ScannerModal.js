@@ -227,7 +227,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                                                 {hasPosition ? (
                                                     <>
                                                         <span style={{color: item.position==='LONG'?'#4caf50':'#ef5350', fontWeight:'bold'}}>
-                                                            {item.position.charAt(0)}
+                                                            {item.position}
                                                         </span>
                                                         <span style={{color:'#888'}}> ({item.bars_ago})</span>
                                                     </>
