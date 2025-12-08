@@ -262,9 +262,9 @@ function Platform() {
             </span>
             
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label title="HotSpots" style={{ color: inputShowHotspots ? '#ffeb3b' : '#555', cursor: 'pointer' }}><input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{display:'none'}}/> HS</label>
-                <label title="Forecast" style={{ color: inputShowForecast ? '#ff00ff' : '#555', cursor: 'pointer' }}><input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} style={{display:'none'}}/> FC</label>
-                <label title="Auto Update" style={{ color: inputAutoUpdate ? '#00bcd4' : '#555', cursor: 'pointer' }}><input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{display:'none'}}/> A</label>
+                <label title="HotSpots" style={{ color: inputShowHotspots ? '#ffeb3b' : '#797777ff', cursor: 'pointer' }}><input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{display:'none'}}/> HotSpots</label>
+                <label title="Forecast" style={{ color: inputShowForecast ? '#ff00ff' : '#797777ff', cursor: 'pointer' }}><input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} style={{display:'none'}}/> Forecast</label>
+                <label title="Auto Update" style={{ color: inputAutoUpdate ? '#00bcd4' : '#797777ff', cursor: 'pointer' }}><input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{display:'none'}}/> Auto</label>
             </span>
           </span>
 
