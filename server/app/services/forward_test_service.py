@@ -1,13 +1,22 @@
-from datetime import datetime
-import time # Added for safety delay if needed
+from datetime import datetime, timedelta
 from app import db
 from app.models import PaperTrade, MarketData
-# Ensure your model has the new columns before running this!
-from app.services.data_manager import get_historical_data, TRACKED_ASSETS
+from app.services.data_manager import TRACKED_ASSETS
 from app.services.signal_engine import analyze_market_snapshot
 import pandas as pd
 
 INVESTMENT_AMOUNT = 1000.0
+
+def get_interval_minutes(interval):
+    """Returns the duration of the interval in minutes."""
+    mapping = {
+        '15min': 15,
+        '30min': 30,
+        '1h': 60,
+        '4h': 240,
+        '1day': 1440
+    }
+    return mapping.get(interval, 15)
 
 def get_historical_data_from_db(symbol, interval, limit=500):
     """Fetches required historical data from the local database."""
@@ -31,22 +40,37 @@ def get_historical_data_from_db(symbol, interval, limit=500):
 def run_forward_test(interval, api_key=None):
     print(f"🧪 [ForwardTest] Running for {interval} on {len(TRACKED_ASSETS)} assets...")
     
+    interval_mins = get_interval_minutes(interval)
+    # Allow a buffer (e.g., 20 mins) for late data or network delays
+    # If a 1h candle is > 1h 20m old, the market is likely closed.
+    max_delay_minutes = interval_mins + 20 
+    
     for symbol in TRACKED_ASSETS:
-        # Use DB data to avoid API limits
+        # 1. Get Data from DB
         ohlc = get_historical_data_from_db(symbol, interval, limit=500)
         
         if not ohlc or len(ohlc) < 50:
             continue
         
-        df = pd.DataFrame(ohlc)
-        closes = df['close'].values.flatten()
-        
+        # 2. Market Closed / Staleness Check
         last_candle = ohlc[-1]
         last_time = last_candle.get('datetime_obj')
         if not last_time:
             last_time = datetime.utcfromtimestamp(last_candle['time'])
+            
+        # Calculate how old this data is
+        now = datetime.utcnow()
+        diff = now - last_time
+        diff_minutes = diff.total_seconds() / 60
         
-        # 2. Analyze
+        if diff_minutes > max_delay_minutes:
+            # print(f"   💤 Skipping {symbol}: Market Closed/Stale (Data is {int(diff_minutes)} min old)")
+            continue
+
+        df = pd.DataFrame(ohlc)
+        closes = df['close'].values.flatten()
+        
+        # 3. Analyze
         result = analyze_market_snapshot(closes)
         
         if not result or not result['signal']:
@@ -55,18 +79,17 @@ def run_forward_test(interval, api_key=None):
         signal = result['signal'] 
         price = float(result['price'])
         
-        # --- NEW: Extract Snapshot Data ---
+        # Extract Snapshot Data
         snapshot = {
             'trend': result['trend_dir'],
             'forecast': result['forecast_dir'],
             'cycle': result['cycle_pct'],
             'fast': result['fast_pct']
         }
-        # ----------------------------------
         
         print(f"   ⚡ SIGNAL DETECTED: {symbol} {signal} @ {price}")
 
-        # 3. Execute Trade Logic (Pass snapshot)
+        # 4. Execute Trade Logic
         if signal == 'BUY':
             handle_buy_signal(symbol, interval, price, last_time, snapshot)
         elif signal == 'SELL':
@@ -86,7 +109,6 @@ def handle_buy_signal(symbol, interval, price, time, snapshot):
         symbol=symbol, interval=interval, direction='LONG', status='OPEN',
         entry_time=time, entry_price=price, invested_amount=INVESTMENT_AMOUNT,
         quantity=INVESTMENT_AMOUNT / price,
-        # --- NEW FIELDS ---
         trend_snapshot=snapshot['trend'],
         forecast_snapshot=snapshot['forecast'],
         cycle_snapshot=snapshot['cycle'],
@@ -109,7 +131,6 @@ def handle_sell_signal(symbol, interval, price, time, snapshot):
         symbol=symbol, interval=interval, direction='SHORT', status='OPEN',
         entry_time=time, entry_price=price, invested_amount=INVESTMENT_AMOUNT,
         quantity=INVESTMENT_AMOUNT / price,
-        # --- NEW FIELDS ---
         trend_snapshot=snapshot['trend'],
         forecast_snapshot=snapshot['forecast'],
         cycle_snapshot=snapshot['cycle'],
