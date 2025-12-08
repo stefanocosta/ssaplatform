@@ -618,7 +618,8 @@ def analyze_asset():
 @jwt_required()
 def get_forward_results():
     # Fetch all trades ordered by time desc
-    trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).limit(200).all()
+    #trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).limit(200).all()
+    trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).all()
     
     # Pre-fetch latest prices for active symbols to avoid N+1 queries
     # We only need this for OPEN trades
