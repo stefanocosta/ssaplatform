@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 # Import extensions/models
 from . import db 
-from app.models import User, PaperTrade 
+from app.models import User, PaperTrade, MarketData
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from sqlalchemy import select 
 from scipy.signal import find_peaks
@@ -587,16 +587,46 @@ def get_forward_results():
     # Fetch all trades ordered by time desc
     trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).limit(200).all()
     
-    # Calculate Summary Stats
-    total_pnl = sum(t.pnl for t in trades if t.status == 'CLOSED')
-    win_rate = 0
-    closed_trades = [t for t in trades if t.status == 'CLOSED']
-    if closed_trades:
-        wins = len([t for t in closed_trades if t.pnl > 0])
-        win_rate = round((wins / len(closed_trades)) * 100, 1)
+    # Pre-fetch latest prices for active symbols to avoid N+1 queries
+    # We only need this for OPEN trades
+    open_symbols = set((t.symbol, t.interval) for t in trades if t.status == 'OPEN')
+    latest_prices = {}
+    
+    for sym, interval in open_symbols:
+        # Get latest closed candle price from DB
+        last_candle = MarketData.query.filter_by(symbol=sym, interval=interval)\
+            .order_by(MarketData.time.desc()).first()
+        if last_candle:
+            latest_prices[(sym, interval)] = last_candle.close
 
     trade_list = []
+    total_pnl = 0
+    closed_count = 0
+    win_count = 0
+
     for t in trades:
+        # Calculate PnL
+        final_pnl = t.pnl
+        final_pnl_pct = t.pnl_pct
+
+        # If trade is OPEN, calculate Unrealized PnL
+        if t.status == 'OPEN':
+            current_price = latest_prices.get((t.symbol, t.interval))
+            if current_price:
+                if t.direction == 'LONG':
+                    final_pnl = (current_price - t.entry_price) * t.quantity
+                else: # SHORT
+                    final_pnl = (t.entry_price - current_price) * t.quantity
+                
+                final_pnl_pct = (final_pnl / t.invested_amount) * 100
+        
+        # Stats for CLOSED trades only
+        if t.status == 'CLOSED':
+            total_pnl += (t.pnl or 0)
+            closed_count += 1
+            if (t.pnl or 0) > 0:
+                win_count += 1
+
         trade_list.append({
             "id": t.id,
             "symbol": t.symbol,
@@ -607,20 +637,26 @@ def get_forward_results():
             "entry_price": t.entry_price,
             "exit_date": t.exit_time.strftime("%Y-%m-%d %H:%M") if t.exit_time else "-",
             "exit_price": t.exit_price,
-            "pnl": round(t.pnl, 2) if t.pnl else 0,
-            "pnl_pct": round(t.pnl_pct, 2) if t.pnl_pct else 0,
-            # --- NEW FIELDS (Handle older trades that might have None) ---
+            # Use the calculated values
+            "pnl": round(final_pnl, 2) if final_pnl is not None else 0,
+            "pnl_pct": round(final_pnl_pct, 2) if final_pnl_pct is not None else 0,
+            
+            # Snapshots
             "trend": t.trend_snapshot if hasattr(t, 'trend_snapshot') and t.trend_snapshot else '-',
             "forecast": t.forecast_snapshot if hasattr(t, 'forecast_snapshot') and t.forecast_snapshot else '-',
             "cycle": t.cycle_snapshot if hasattr(t, 'cycle_snapshot') and t.cycle_snapshot is not None else 0,
             "fast": t.fast_snapshot if hasattr(t, 'fast_snapshot') and t.fast_snapshot is not None else 0,
         })
 
+    win_rate = 0
+    if closed_count > 0:
+        win_rate = round((win_count / closed_count) * 100, 1)
+
     return jsonify({
         "summary": {
             "total_pnl": round(total_pnl, 2),
             "win_rate": win_rate,
-            "total_trades": len(closed_trades)
+            "total_trades": closed_count
         },
         "trades": trade_list
     })

@@ -85,9 +85,9 @@ const ForwardTestModal = ({ onClose }) => {
 
                 {/* 3. SCROLLABLE TABLE CONTAINER */}
                 <div style={{ flex: 1, overflow: 'auto', padding: '0' }}>
-                    <table style={{ 
+                <table style={{ 
                         width: '100%', 
-                        minWidth: '800px', // Forces horizontal scroll on small screens
+                        minWidth: '900px', // Increased min-width to fit new column
                         borderCollapse: 'collapse', 
                         color: '#ddd', 
                         fontSize: '0.85rem' 
@@ -104,7 +104,9 @@ const ForwardTestModal = ({ onClose }) => {
                                 <th>Status</th>
                                 <th>Entry</th>
                                 <th>Time</th>
-                                <th>Exit</th>
+                                {/* --- NEW HEADER --- */}
+                                <th>Exit Time</th>
+                                <th>Exit $</th> 
                                 <th>PnL</th>
                             </tr>
                         </thead>
@@ -127,11 +129,24 @@ const ForwardTestModal = ({ onClose }) => {
                                     <td style={{ fontWeight: 'bold', color: getCycleColor(trade.fast) }}>{trade.fast}</td>
                                     <td style={{ fontWeight: 'bold', color: getDirColor(trade.forecast) }}>{trade.forecast}</td>
                                     <td style={{ color: trade.status === 'OPEN' ? '#29b6f6' : '#888' }}>{trade.status}</td>
+                                    
+                                    {/* Entry Price */}
                                     <td>{trade.entry_price.toFixed(2)}</td>
+                                    
+                                    {/* Entry Time */}
                                     <td style={{ fontSize: '0.8rem', color: '#aaa', whiteSpace: 'nowrap' }}>{trade.entry_date}</td>
+                                    
+                                    {/* --- NEW: Exit Time --- */}
+                                    <td style={{ fontSize: '0.8rem', color: '#aaa', whiteSpace: 'nowrap' }}>
+                                        {trade.exit_date !== '-' ? trade.exit_date : ''}
+                                    </td>
+
+                                    {/* Exit Price */}
                                     <td>{trade.exit_price ? trade.exit_price.toFixed(2) : '-'}</td>
+                                    
+                                    {/* PnL (Now shows Live PnL for Open trades) */}
                                     <td style={{ fontWeight: 'bold', color: trade.pnl > 0 ? '#00c853' : (trade.pnl < 0 ? '#ff3d00' : '#888') }}>
-                                        {trade.status === 'CLOSED' ? `$${trade.pnl} (${trade.pnl_pct}%)` : '-'}
+                                        {trade.pnl !== 0 ? `$${trade.pnl} (${trade.pnl_pct}%)` : '-'}
                                     </td>
                                 </tr>
                             ))}

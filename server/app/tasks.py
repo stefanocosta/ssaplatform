@@ -56,7 +56,7 @@ def update_market_data():
     trigger_1h = (minute == 0)
     trigger_4h = (minute == 0 and hour % 4 == 0)
 
-    print(f"⏰ Daemon Started at {now.strftime('%H:%M:%S')} | Triggers: 15m={trigger_15m}, 1h={trigger_1h}")
+    print(f"⏰ Daemon Started at {now.strftime('%H:%M:%S')} | Triggers: 15m={trigger_15m}, 1h={trigger_1h}, 4h={trigger_4h}")
 
     if not current_app:
         print("❌ [DAEMON ERROR] No active Flask Application Context!")
