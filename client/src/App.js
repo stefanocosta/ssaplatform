@@ -73,22 +73,16 @@ function Platform() {
       const map = { '1min': 1, '5min': 5, '15min': 15, '30min': 30, '1h': 60, '4h': 240 };
       const intervalMins = map[intervalStr] || 60;
       
-      // Calculate how many minutes to add to reach the next interval boundary
-      // e.g. if 15min interval, and time is 12:04, next is 12:15
       let minutesToAdd = intervalMins - (minutes % intervalMins);
       
-      // Special Case: If we are currently in the "Buffer Zone" (e.g. 12:00:05),
-      // we should scan NOW, not wait for 12:15:10.
       if (minutes % intervalMins === 0 && seconds < targetSecond) {
           return (targetSecond - seconds) * 1000;
       }
 
-      // If we are exactly on the minute but past target seconds, we wait for next interval
       if (minutes % intervalMins === 0 && seconds >= targetSecond) {
           minutesToAdd = intervalMins;
       }
 
-      // Calculate target date
       const targetTime = new Date(now.getTime() + minutesToAdd * 60000);
       targetTime.setSeconds(targetSecond);
       targetTime.setMilliseconds(0);
@@ -113,9 +107,7 @@ function Platform() {
           const newSignals = results.filter(r => r.signal === 'BUY' || r.signal === 'SELL');
           const notifyList = [];
 
-          // 3. Dedupe logic (Prevent spamming same signal)
-          // We use a unique key: SYMBOL + SIGNAL + TIME_BLOCK
-          // Approximate time block using current hour/minute to distinguish from previous candles
+          // 3. Dedupe logic
           const timeBlock = `${new Date().getHours()}:${new Date().getMinutes()}`;
 
           newSignals.forEach(s => {
@@ -126,22 +118,26 @@ function Platform() {
               }
           });
 
-          // 4. Notify
+          // 4. Notify (SAFELY for Mobile)
           if (notifyList.length > 0) {
              const body = notifyList.map(s => `${s.symbol}: ${s.signal} @ ${s.price}`).join('\n');
              
-             if (Notification.permission === "granted") {
-                 new Notification(`🚨 ${notifyList.length} Market Signals!`, {
-                     body: body,
-                     icon: '/favicon.ico',
-                     requireInteraction: true // Keeps notification on screen
-                 });
-             } else if (Notification.permission !== "denied") {
-                 Notification.requestPermission();
+             // Check if Notification API exists and is granted
+             if ('Notification' in window && Notification.permission === "granted") {
+                 try {
+                     new Notification(`🚨 ${notifyList.length} Market Signals!`, {
+                         body: body,
+                         icon: '/favicon.ico',
+                         requireInteraction: true 
+                     });
+                 } catch (e) {
+                     console.error("Notification trigger failed", e);
+                 }
+             } else {
+                 // Fallback for Mobile/No-Permission: Log to console or use Alert
+                 console.log("MARKET ALERT:", body);
+                 // Optional: alert(`Market Alert:\n${body}`); // Uncomment if you want a popup alert on mobile
              }
-             
-             // Optional Sound
-             // const audio = new Audio('/alert_sound.mp3'); audio.play().catch(e => console.log(e));
           }
 
       } catch (err) {
@@ -162,7 +158,6 @@ function Platform() {
     if (isMonitoring && monitorInterval) {
         console.log(`Monitor Started for ${monitorInterval}`);
         
-        // Calculate initial delay
         const delay = getDelayToNextScan(monitorInterval);
         console.log(`First scan scheduled in ${(delay/1000).toFixed(1)} seconds`);
 
@@ -175,14 +170,13 @@ function Platform() {
         processedSignalsRef.current.clear();
     }
 
-    // Cleanup on unmount
     return () => {
         if (monitorTimeoutRef.current) clearTimeout(monitorTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMonitoring, monitorInterval]);
 
-  // Keep Alive (Prevent Auth Timeout)
+  // Keep Alive
   useEffect(() => {
       if (!isMonitoring) return;
       const keepAlive = setInterval(async () => {

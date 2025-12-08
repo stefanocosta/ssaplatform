@@ -14,10 +14,18 @@ const MonitorModal = ({ onClose, onStart }) => {
     ];
 
     const handleStart = () => {
-        // Request Notification Permission immediately
-        if (Notification.permission !== "granted") {
-            Notification.requestPermission();
+        // 1. SAFELY Attempt to request permission (Only if browser supports it)
+        if ('Notification' in window) {
+            try {
+                if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                    Notification.requestPermission().catch(err => console.log("Notification Error:", err));
+                }
+            } catch (e) {
+                console.warn("Notifications not supported on this device.");
+            }
         }
+
+        // 2. ALWAYS start the monitor and close modal, even if Notifications fail
         onStart(selectedInterval);
     };
 
