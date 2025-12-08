@@ -36,42 +36,29 @@ const ForwardTestModal = ({ onClose }) => {
                 let aValue = a[sortConfig.key];
                 let bValue = b[sortConfig.key];
 
-                // 1. CUSTOM MAPPINGS
-                // Trend/Forecast: UP > FLAT > DOWN
+                // Custom Mappings
                 if (sortConfig.key === 'trend' || sortConfig.key === 'forecast') {
                     const map = { 'UP': 3, 'FLAT': 2, 'DOWN': 1, '-': 0 };
                     aValue = map[aValue] || 0;
                     bValue = map[bValue] || 0;
-                } 
-                // Direction: LONG > SHORT
-                else if (sortConfig.key === 'direction') {
+                } else if (sortConfig.key === 'direction') {
                     const map = { 'LONG': 2, 'SHORT': 1 };
                     aValue = map[aValue] || 0;
                     bValue = map[bValue] || 0;
-                }
-                // Status: OPEN > CLOSED
-                else if (sortConfig.key === 'status') {
+                } else if (sortConfig.key === 'status') {
                     const map = { 'OPEN': 2, 'CLOSED': 1 };
                     aValue = map[aValue] || 0;
                     bValue = map[bValue] || 0;
-                }
-                // Dates: Convert to Timestamp
-                else if (sortConfig.key === 'entry_date' || sortConfig.key === 'exit_date') {
+                } else if (sortConfig.key === 'entry_date' || sortConfig.key === 'exit_date') {
                     aValue = aValue === '-' ? 0 : new Date(aValue).getTime();
                     bValue = bValue === '-' ? 0 : new Date(bValue).getTime();
-                }
-                // Handle nulls/undefined for numbers (like exit_price)
-                else {
+                } else {
                     if (aValue === null || aValue === undefined || aValue === '-') aValue = -Infinity;
                     if (bValue === null || bValue === undefined || bValue === '-') bValue = -Infinity;
                 }
 
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'asc' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'asc' ? 1 : -1;
-                }
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
             });
         }
@@ -79,14 +66,13 @@ const ForwardTestModal = ({ onClose }) => {
     }, [data, sortConfig]);
 
     const requestSort = (key) => {
-        let direction = 'desc'; // Default to descending for numbers/dates usually
+        let direction = 'desc'; 
         if (sortConfig.key === key && sortConfig.direction === 'desc') {
             direction = 'asc';
         }
         setSortConfig({ key, direction });
     };
 
-    // Helper to render sortable table headers
     const createSortHeader = (label, key, align = 'left') => (
         <th 
             style={{ padding: '15px 10px', cursor: 'pointer', userSelect: 'none', textAlign: align }}
@@ -118,6 +104,36 @@ const ForwardTestModal = ({ onClose }) => {
         return '#aaa';
     };
 
+    // Helper Component for the Top Grid Cards
+    const StatCard = ({ label, value, color = 'white', subValue = null }) => (
+        <div style={{ background: '#333', padding: '10px', borderRadius: '6px', minWidth: '100px', flex: 1 }}>
+            <div style={{ color: '#aaa', fontSize: '0.65rem', textTransform: 'uppercase', marginBottom:'4px' }}>{label}</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: color }}>{value}</div>
+            {subValue && <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '2px' }}>{subValue}</div>}
+        </div>
+    );
+
+    // Helper for Timeframe Breakdown
+    const IntervalCard = ({ data }) => (
+        <div style={{ background: '#2a2a2a', border: '1px solid #444', borderRadius: '6px', padding: '8px', minWidth: '130px', flex: 1 }}>
+            <div style={{ color: '#0078d4', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '5px', borderBottom:'1px solid #444', paddingBottom:'3px' }}>
+                {data.interval}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '2px' }}>
+                <span style={{color: '#aaa'}}>PnL:</span>
+                <span style={{ fontWeight: 'bold', color: data.pnl >= 0 ? '#00c853' : '#ff3d00' }}>${data.pnl}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '2px' }}>
+                <span style={{color: '#aaa'}}>Win%:</span>
+                <span style={{ color: 'white' }}>{data.win_rate}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                <span style={{color: '#aaa'}}>Open:</span>
+                <span style={{ color: '#29b6f6' }}>{data.open}</span>
+            </div>
+        </div>
+    );
+
     return (
         <div style={{
             position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
@@ -131,7 +147,7 @@ const ForwardTestModal = ({ onClose }) => {
                 border: '1px solid #444', boxShadow: '0 0 20px black'
             }}>
                 {/* Header */}
-                <div style={{ padding: '20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ padding: '15px 20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                         <h2 style={{ color: 'white', margin: 0, fontSize: '1.2rem' }}>Forward Test Results</h2>
                         <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '5px' }}>
@@ -141,36 +157,36 @@ const ForwardTestModal = ({ onClose }) => {
                     <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X /></button>
                 </div>
 
-                {/* Summary Cards */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '15px', backgroundColor: '#252525' }}>
-                    <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.75rem' }}>NET PNL</div>
-                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: data?.summary.total_pnl >= 0 ? '#00c853' : '#ff3d00' }}>
-                            ${data?.summary.total_pnl}
-                        </div>
+                {/* --- STATS DASHBOARD --- */}
+                <div style={{ padding: '15px', backgroundColor: '#252525', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    
+                    {/* Row 1: Global Stats */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                        <StatCard 
+                            label="Net PnL" 
+                            value={`$${data?.summary.total_pnl}`} 
+                            color={data?.summary.total_pnl >= 0 ? '#00c853' : '#ff3d00'} 
+                        />
+                        <StatCard label="Win Rate" value={`${data?.summary.win_rate}%`} />
+                        <StatCard label="Closed Trades" value={data?.summary.total_trades} />
+                        <StatCard label="Open Trades" value={data?.summary.open_trades} color="#29b6f6" />
+                        <StatCard label="Avg Win" value={`$${data?.summary.avg_win}`} color="#00c853" />
+                        <StatCard label="Avg Loss" value={`$${data?.summary.avg_loss}`} color="#ff3d00" />
                     </div>
-                    <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.75rem' }}>WIN RATE</div>
-                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
-                            {data?.summary.win_rate}%
-                        </div>
-                    </div>
-                    <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
-                        <div style={{ color: '#aaa', fontSize: '0.75rem' }}>CLOSED TRADES</div>
-                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
-                            {data?.summary.total_trades}
-                        </div>
+
+                    {/* Row 2: Timeframe Breakdown */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '5px' }}>
+                        {data?.intervals.map(intv => (
+                            <IntervalCard key={intv.interval} data={intv} />
+                        ))}
                     </div>
                 </div>
 
                 {/* Table */}
                 <div style={{ flex: 1, overflow: 'auto', padding: '0' }}>
-                <table style={{ 
-                        width: '100%', 
-                        minWidth: '900px',
-                        borderCollapse: 'collapse', 
-                        color: '#ddd', 
-                        fontSize: '0.85rem' 
+                    <table style={{ 
+                        width: '100%', minWidth: '900px',
+                        borderCollapse: 'collapse', color: '#ddd', fontSize: '0.85rem' 
                     }}>
                         <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', textAlign: 'left', zIndex: 10 }}>
                             <tr style={{ borderBottom: '1px solid #444', color: '#888' }}>
