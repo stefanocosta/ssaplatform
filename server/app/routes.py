@@ -298,6 +298,11 @@ def get_chart_data():
 
     return jsonify(response_data)
 
+# --- HELPER FOR STALENESS ---
+def get_interval_minutes(interval):
+    mapping = { '1min': 1, '5min': 5, '15min': 15, '30min': 30, '1h': 60, '4h': 240, '1day': 1440 }
+    return mapping.get(interval, 60)
+
 @bp.route('/scan', methods=['GET'])
 @jwt_required()
 def scan_market():
@@ -309,14 +314,36 @@ def scan_market():
         l_param = 30
 
     scanner_results = []
+    
+    # Calculate Max Allowed Delay (Interval + 20 mins buffer)
+    interval_mins = get_interval_minutes(interval)
+    max_delay_seconds = (interval_mins * 60) + (20 * 60) 
+    now_utc = datetime.utcnow()
 
     # Loop through ALL tracked assets
     for symbol in TRACKED_ASSETS:
-        # 1. Fetch Data
+        # 1. Fetch Data (Pass None as API Key to force DB-only)
         ohlc_data = get_historical_data(symbol, interval, None, limit=500)
         
         if not ohlc_data or len(ohlc_data) < 60:
             continue
+
+        # --- NEW: STALENESS CHECK ---
+        # Check if the last candle is too old (Market Closed or Data Issue)
+        last_candle = ohlc_data[-1]
+        
+        # Handle both Int timestamp and Datetime object
+        if 'datetime_obj' in last_candle and last_candle['datetime_obj']:
+            last_time = last_candle['datetime_obj']
+        else:
+            last_time = datetime.utcfromtimestamp(last_candle['time'])
+            
+        # If data is older than (Interval + 20mins), ignore it.
+        # This prevents "Ghost Signals" on weekends for Stocks/Forex.
+        if (now_utc - last_time).total_seconds() > max_delay_seconds:
+            # Skip this asset because data is stale
+            continue
+        # ----------------------------
 
         # 2. Prepare Data
         df = pd.DataFrame(ohlc_data)
@@ -341,7 +368,6 @@ def scan_market():
             fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
             
             # Directions
-            curr_price = close_prices[-1]
             curr_trend = trend[-1]
             prev_trend = trend[-2]
             trend_direction = "UP" if curr_trend > prev_trend else "DOWN"
@@ -354,11 +380,9 @@ def scan_market():
             except:
                 pass
 
-            # 4. FIND POSITION STATUS (Look back 60 bars)
-            # We want to know: Is there an active trade? What is the PnL?
-            
-            active_signal_type = None # "BUY" or "SELL" if happening right NOW
-            position_type = "NEUTRAL" # "LONG" or "SHORT" from history
+            # 4. FIND POSITION STATUS
+            active_signal_type = None 
+            position_type = "NEUTRAL" 
             bars_ago = 0
             entry_price = 0.0
             pnl_pct = 0.0
@@ -380,8 +404,8 @@ def scan_market():
             elif is_hot_sell and is_noise_sell:
                 active_signal_type = "SELL"
 
-            # Lookback loop to find the "Holding" position
-            # We iterate backwards from N-1 down to N-60
+            # Lookback loop 
+            curr_price = close_prices[-1]
             for i in range(N-1, max(0, N-60), -1):
                 p_i = close_prices[i]
                 t_i = trend[i]
@@ -389,7 +413,6 @@ def scan_market():
                 n_i = noise[i]
                 pn_i = noise[i-1]
 
-                # Check Signal Conditions at bar i
                 ib_hot = (r_i < t_i) and (p_i < r_i)
                 is_hot = (r_i > t_i) and (p_i > r_i)
                 ib_noise = (n_i < 0) and (n_i >= pn_i)
@@ -399,18 +422,15 @@ def scan_market():
                     position_type = "LONG"
                     bars_ago = (N - 1) - i
                     entry_price = p_i
-                    # Calc Unrealized PnL
                     pnl_pct = ((curr_price - entry_price) / entry_price) * 100
                     break
                 elif is_hot and is_noise:
                     position_type = "SHORT"
                     bars_ago = (N - 1) - i
                     entry_price = p_i
-                    # Calc Unrealized PnL (Inverse for short)
                     pnl_pct = ((entry_price - curr_price) / entry_price) * 100
                     break
             
-            # Append result for EVERY asset
             scanner_results.append({
                 "symbol": symbol,
                 "price": curr_price,
@@ -418,18 +438,21 @@ def scan_market():
                 "forecast_dir": forecast_dir,
                 "cycle_pct": int(cyc_pos),
                 "fast_pct": int(fast_pos),
-                "signal": active_signal_type, # NEW KEY (ScannerModal expects this)
-                "position": position_type,    # NEW KEY
-                "bars_ago": bars_ago,         # NEW KEY
-                "pnl_pct": round(pnl_pct, 2)  # NEW KEY
+                "signal": active_signal_type, 
+                "position": position_type,    
+                "bars_ago": bars_ago,         
+                "pnl_pct": round(pnl_pct, 2)  
             })
 
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
             continue
 
-    # Sort: Active signals first, then by PnL desc
-    scanner_results.sort(key=lambda x: (x['signal'] is None, -x['pnl_pct']))
+    # Sort Results: Buy/Sell Signals FIRST, then High PnL
+    scanner_results.sort(key=lambda x: (
+        0 if x['signal'] else 1,  # Puts BUY/SELL at top
+        -x['pnl_pct']             # Then sorts by PnL
+    ))
 
     return jsonify(scanner_results)
 

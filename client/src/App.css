@@ -267,3 +267,15 @@ body, html, #root {
     color: #555;
     font-size: 0.9rem;
 }
+
+/* --- MONITOR ANIMATION (New) --- */
+@keyframes flash-orange {
+  0% { background-color: #ff9800; color: white; box-shadow: 0 0 5px #ff9800; }
+  50% { background-color: #e65100; color: #ffcc80; box-shadow: 0 0 20px #ff9800; }
+  100% { background-color: #ff9800; color: white; box-shadow: 0 0 5px #ff9800; }
+}
+
+.flashing-monitor {
+  animation: flash-orange 2s infinite;
+  border: 1px solid #ffcc80 !important;
+}
