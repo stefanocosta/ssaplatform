@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; 
-import { Radar, Activity, FlaskConical } from 'lucide-react'; 
+import { Radar, Activity, FlaskConical, X, BellRing } from 'lucide-react'; 
 import TradingChart from './components/TradingChart';
 import AuthForm from './components/AuthForm'; 
 import LandingPage from './components/LandingPage'; 
@@ -9,6 +9,81 @@ import AnalysisModal from './components/AnalysisModal';
 import ForwardTestModal from './components/ForwardTestModal'; 
 import MonitorModal from './components/MonitorModal'; 
 import './App.css';
+
+// --- INTERNAL COMPONENT: MOBILE ALERT POPUP ---
+const AlertPopup = ({ alerts, onClose }) => {
+    useEffect(() => {
+        // 1. Play Sound on Mount
+        const audio = new Audio('/alert.mp3');
+        audio.play().catch(e => console.log("Audio autoplay blocked by browser policy:", e));
+
+        // 2. Auto-Close after 60 seconds (approx 1 candle duration)
+        const timer = setTimeout(() => {
+            onClose();
+        }, 60000);
+
+        return () => clearTimeout(timer);
+    }, [onClose]);
+
+    return (
+        <div style={{
+            position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+            width: '90%', maxWidth: '400px',
+            backgroundColor: '#2d1b1b', // Red-ish dark background for alert
+            border: '2px solid #ff4444',
+            borderRadius: '12px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.8)',
+            zIndex: 9999, // On top of everything
+            padding: '15px',
+            animation: 'fadeIn 0.3s ease-out'
+        }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3 style={{ margin: 0, color: '#ff4444', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <BellRing size={20} /> Market Alert
+                </h3>
+                <button 
+                    onClick={onClose}
+                    style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer' }}
+                >
+                    <X size={20} />
+                </button>
+            </div>
+            
+            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {alerts.map((alert, idx) => (
+                    <div key={idx} style={{ 
+                        padding: '8px 0', 
+                        borderBottom: idx < alerts.length - 1 ? '1px solid #444' : 'none',
+                        color: 'white', fontSize: '1rem'
+                    }}>
+                        <strong style={{ color: '#ff9800' }}>{alert.symbol}</strong>
+                        <span style={{ margin: '0 8px' }}>→</span>
+                        <span style={{ 
+                            fontWeight: 'bold', 
+                            color: alert.signal === 'BUY' ? '#00e676' : '#ff5252' 
+                        }}>
+                            {alert.signal}
+                        </span>
+                        <span style={{ float: 'right', color: '#888', fontSize: '0.9rem' }}>
+                            {alert.price}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            <button 
+                onClick={onClose}
+                style={{
+                    width: '100%', marginTop: '15px', padding: '10px',
+                    backgroundColor: '#444', border: 'none', borderRadius: '6px',
+                    color: 'white', fontWeight: 'bold'
+                }}
+            >
+                DISMISS
+            </button>
+        </div>
+    );
+};
 
 function Platform() {
   const [inputSymbol, setInputSymbol] = useState('BTC/USD'); 
@@ -30,11 +105,14 @@ function Platform() {
   const [showAnalysis, setShowAnalysis] = useState(false); 
   const [showForwardTest, setShowForwardTest] = useState(false); 
 
-  // --- NEW STATE FOR MONITOR ---
+  // --- MONITOR STATE ---
   const [showMonitorModal, setShowMonitorModal] = useState(false);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [monitorInterval, setMonitorInterval] = useState(null); 
   
+  // --- ALERT STATE (FALLBACK POPUP) ---
+  const [activeAlerts, setActiveAlerts] = useState([]); // Array of alert objects
+
   // Refs for timing and deduping
   const monitorTimeoutRef = useRef(null);
   const processedSignalsRef = useRef(new Set()); 
@@ -60,16 +138,12 @@ function Platform() {
 
   // --- MONITORING ENGINE ---
   
-  // Helper: Calculate milliseconds until next scan target
   const getDelayToNextScan = (intervalStr) => {
       const now = new Date();
       const minutes = now.getMinutes();
       const seconds = now.getSeconds();
-      
-      // Target: 10 seconds past the minute
       const targetSecond = 10;
       
-      // Map interval string to minutes integer
       const map = { '1min': 1, '5min': 5, '15min': 15, '30min': 30, '1h': 60, '4h': 240 };
       const intervalMins = map[intervalStr] || 60;
       
@@ -97,17 +171,15 @@ function Platform() {
       const token = localStorage.getItem('access_token');
       
       try {
-          // 1. Call API
           const res = await fetch(`/api/scan?interval=${interval}`, {
               headers: { 'Authorization': `Bearer ${token}` }
           });
           const results = await res.json();
           
-          // 2. Filter Results
           const newSignals = results.filter(r => r.signal === 'BUY' || r.signal === 'SELL');
           const notifyList = [];
 
-          // 3. Dedupe logic
+          // Dedupe Logic
           const timeBlock = `${new Date().getHours()}:${new Date().getMinutes()}`;
 
           newSignals.forEach(s => {
@@ -118,11 +190,14 @@ function Platform() {
               }
           });
 
-          // 4. Notify (SAFELY for Mobile)
+          // --- TRIGGER NOTIFICATIONS ---
           if (notifyList.length > 0) {
-             const body = notifyList.map(s => `${s.symbol}: ${s.signal} @ ${s.price}`).join('\n');
              
-             // Check if Notification API exists and is granted
+             // 1. Set State for In-App Popup (Reliable on Mobile)
+             setActiveAlerts(notifyList);
+
+             // 2. Try Standard Browser Notification (Desktop)
+             const body = notifyList.map(s => `${s.symbol}: ${s.signal} @ ${s.price}`).join('\n');
              if ('Notification' in window && Notification.permission === "granted") {
                  try {
                      new Notification(`🚨 ${notifyList.length} Market Signals!`, {
@@ -131,12 +206,8 @@ function Platform() {
                          requireInteraction: true 
                      });
                  } catch (e) {
-                     console.error("Notification trigger failed", e);
+                     console.error("Browser notification failed", e);
                  }
-             } else {
-                 // Fallback for Mobile/No-Permission: Log to console or use Alert
-                 console.log("MARKET ALERT:", body);
-                 // Optional: alert(`Market Alert:\n${body}`); // Uncomment if you want a popup alert on mobile
              }
           }
 
@@ -144,7 +215,7 @@ function Platform() {
           console.error("Monitor Scan Error:", err);
       }
       
-      // 5. Schedule Next Loop
+      // Schedule Next Loop
       const nextDelay = getDelayToNextScan(interval);
       console.log(`Next scan in ${(nextDelay/1000).toFixed(1)} seconds`);
       
@@ -154,20 +225,16 @@ function Platform() {
   };
 
   useEffect(() => {
-    // START / STOP Logic
     if (isMonitoring && monitorInterval) {
         console.log(`Monitor Started for ${monitorInterval}`);
-        
         const delay = getDelayToNextScan(monitorInterval);
-        console.log(`First scan scheduled in ${(delay/1000).toFixed(1)} seconds`);
-
         monitorTimeoutRef.current = setTimeout(() => {
             performScan(monitorInterval);
         }, delay);
     } else {
-        // Stop
         if (monitorTimeoutRef.current) clearTimeout(monitorTimeoutRef.current);
         processedSignalsRef.current.clear();
+        setActiveAlerts([]); // Clear alerts on stop
     }
 
     return () => {
@@ -182,10 +249,9 @@ function Platform() {
       const keepAlive = setInterval(async () => {
            const token = localStorage.getItem('access_token');
            try { await fetch('/api/user-info', { headers: { 'Authorization': `Bearer ${token}` } }); } catch(e){}
-      }, 5 * 60 * 1000); // 5 mins
+      }, 5 * 60 * 1000); 
       return () => clearInterval(keepAlive);
   }, [isMonitoring]);
-
 
   const toggleMonitor = (interval) => {
       setMonitorInterval(interval);
@@ -198,313 +264,95 @@ function Platform() {
       setMonitorInterval(null);
   };
 
-  const handleSymbolChange = (event) => {
-    setInputSymbol(event.target.value);
+  // ... (Existing Event Handlers match previous version) ...
+  const handleSymbolChange = (e) => setInputSymbol(e.target.value);
+  const handleCustomSymbolChange = (e) => setInputCustomSymbol(e.target.value);
+  const handleIntervalChange = (e) => {
+      setInputInterval(e.target.value);
+      setShowScanner(false); setShowAnalysis(false); setShowForwardTest(false);
   };
-
-  const handleCustomSymbolChange = (event) => {
-    setInputCustomSymbol(event.target.value);
-  };
-
-  const handleIntervalChange = (event) => {
-    setInputInterval(event.target.value);
-    setShowScanner(false);
-    setShowAnalysis(false);
-    setShowForwardTest(false);
-  };
-
-  const handleAutoUpdateToggle = (event) => {
-    setInputAutoUpdate(event.target.checked);
-  };
-
-  const handleShowHotspotsToggle = (event) => {
-    setInputShowHotspots(event.target.checked);
-  };
-
-  const handleShowForecastToggle = (event) => {
-    setInputShowForecast(event.target.checked);
-  };
-
+  const handleAutoUpdateToggle = (e) => setInputAutoUpdate(e.target.checked);
+  const handleShowHotspotsToggle = (e) => setInputShowHotspots(e.target.checked);
+  const handleShowForecastToggle = (e) => setInputShowForecast(e.target.checked);
+  
   const handleLookup = () => {
-    const symbolToLookup = (inputSymbol === 'CUSTOM' ? inputCustomSymbol : inputSymbol).toUpperCase();
-    if (!symbolToLookup) {
-        console.error("No symbol provided");
-        return; 
-    }
-    setFinalSymbol(symbolToLookup);
+    const s = (inputSymbol === 'CUSTOM' ? inputCustomSymbol : inputSymbol).toUpperCase();
+    if (!s) return;
+    setFinalSymbol(s);
     setLookupCount(c => c + 1);
   };
 
-  const handleCustomSubmit = (event) => {
-    event.preventDefault(); 
-    handleLookup();
-    if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-    }
-  };
+  const handleCustomSubmit = (e) => { e.preventDefault(); handleLookup(); if(document.activeElement) document.activeElement.blur(); };
 
   return (
     <AuthForm>
-      <div 
-        className="App"
-        style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          height: '100%', 
-          width: '100%',
-          overflow: 'hidden' 
-        }} 
-      >
+      <div className="App" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
+        
+        {/* --- IN-APP ALERT POPUP (FALLBACK) --- */}
+        {activeAlerts.length > 0 && (
+            <AlertPopup 
+                alerts={activeAlerts} 
+                onClose={() => setActiveAlerts([])} 
+            />
+        )}
+
         {/* CONTROL BAR */}
-        <div style={{ 
-          flex: '0 0 auto', 
-          color: '#d1d4dc', 
-          background: '#2d2d2d', 
-          padding: '5px 10px', 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '10px', 
-          flexWrap: 'wrap',
-          zIndex: 20,
-          borderBottom: '1px solid #444'
-        }}>
-          
-          {/* Symbol Selector */}
+        <div style={{ flex: '0 0 auto', color: '#d1d4dc', background: '#2d2d2d', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', zIndex: 20, borderBottom: '1px solid #444' }}>
           <span>
             <label style={{ marginRight: '5px' }}>Symbol:</label>
-            <select 
-              value={inputSymbol}
-              onChange={handleSymbolChange}
-              style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}
-            >
-              {Object.keys(assetCategories).map(category => (
-                <optgroup key={category} label={category}>
-                  {assetCategories[category].map(asset => (
-                    <option key={asset} value={asset}>
-                      {asset}
-                    </option>
-                  ))}
+            <select value={inputSymbol} onChange={handleSymbolChange} style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}>
+              {Object.keys(assetCategories).map(cat => (
+                <optgroup key={cat} label={cat}>
+                  {assetCategories[cat].map(asset => <option key={asset} value={asset}>{asset}</option>)}
                 </optgroup>
               ))}
               <option value="CUSTOM">Custom...</option>
             </select>
-
             {inputSymbol === 'CUSTOM' && (
-              <form 
-                onSubmit={handleCustomSubmit} 
-                style={{ display: 'inline-block', margin: 0, padding: 0 }}
-              >
-                <input 
-                  type="text"
-                  value={inputCustomSymbol}
-                  onChange={handleCustomSymbolChange}
-                  onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())}
-                  placeholder="Type & Press Enter"
-                  enterKeyHint="search"
-                  inputMode="text"
-                  style={{ 
-                    padding: '5px', 
-                    backgroundColor: '#3c3c3c', 
-                    color: 'white', 
-                    border: '1px solid #555', 
-                    width: '100px', 
-                    marginLeft: '5px' 
-                  }}
-                />
+              <form onSubmit={handleCustomSubmit} style={{ display: 'inline-block', margin: 0, padding: 0 }}>
+                <input type="text" value={inputCustomSymbol} onChange={handleCustomSymbolChange} onBlur={() => setInputCustomSymbol(inputCustomSymbol.toUpperCase())} placeholder="Type..." style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555', width: '100px', marginLeft: '5px' }} />
               </form>
             )}
           </span>
 
-          {/* Interval Selector */}
           <span>
             <label style={{ marginRight: '5px' }}>Interval:</label>
-            <select 
-              value={inputInterval} 
-              onChange={handleIntervalChange}
-              style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}
-            >
-              <option value="1min">1min</option>
-              <option value="5min">5min</option>
-              <option value="15min">15min</option>
-              <option value="30min">30min</option>
-              <option value="1h">1H</option>
-              <option value="4h">4H</option>
-              <option value="1day">Daily</option>
-              <option value="1week">Weekly</option>
-              <option value="1month">Monthly</option>
+            <select value={inputInterval} onChange={handleIntervalChange} style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555' }}>
+              <option value="1min">1min</option><option value="5min">5min</option><option value="15min">15min</option><option value="30min">30min</option><option value="1h">1H</option><option value="4h">4H</option><option value="1day">Daily</option><option value="1week">Weekly</option><option value="1month">Monthly</option>
             </select>
           </span>
           
-          {/* Toggles */}
           <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <label style={{ color: inputShowHotspots ? '#ffeb3b' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
-              <input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} style={{ marginRight: '4px' }} />
-              HotSpots
-            </label>
-
-            <label style={{ color: inputShowForecast ? '#ff00ff' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
-              <input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} style={{ marginRight: '4px' }} />
-              Forecast
-            </label>
-            
-            <label style={{ color: inputAutoUpdate ? '#00bcd4' : '#d1d4dc', display: 'flex', alignItems: 'center' }}>
-              <input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} style={{ marginRight: '4px' }} />
-              Auto
-            </label>
+            <label style={{ color: inputShowHotspots ? '#ffeb3b' : '#d1d4dc' }}><input type="checkbox" checked={inputShowHotspots} onChange={handleShowHotspotsToggle} /> HotSpots</label>
+            <label style={{ color: inputShowForecast ? '#ff00ff' : '#d1d4dc' }}><input type="checkbox" checked={inputShowForecast} onChange={handleShowForecastToggle} /> Forecast</label>
+            <label style={{ color: inputAutoUpdate ? '#00bcd4' : '#d1d4dc' }}><input type="checkbox" checked={inputAutoUpdate} onChange={handleAutoUpdateToggle} /> Auto</label>
           </span>
 
-          {/* --- FORWARD TEST BUTTON --- */}
-          <button
-            onClick={() => setShowForwardTest(true)}
-            style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                background: '#00c853', color: 'white', border: 'none', 
-                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
-                fontSize: '0.9rem',
-                marginLeft: 'auto', // Pushes buttons to the right
-                marginRight: '10px'
-            }}
-            title="View Forward Test Results"
-          >
-            <FlaskConical size={16} />
-            Test
-          </button>
+          <button onClick={() => setShowForwardTest(true)} style={{ display: 'flex', gap: '5px', background: '#00c853', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px', marginLeft: 'auto', marginRight: '10px' }}><FlaskConical size={16} /> Test</button>
           
-          {/* --- MONITOR BUTTON (New) --- */}
-          <button
-            onClick={() => {
-                if (isMonitoring) {
-                    if (window.confirm("Stop Monitoring?")) stopMonitor();
-                } else {
-                    setShowMonitorModal(true);
-                }
-            }}
-            className={isMonitoring ? 'flashing-monitor' : ''}
-            style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                background: isMonitoring ? '#e65100' : 'transparent', 
-                color: isMonitoring ? 'white' : '#ff9800', 
-                border: '1px solid #ff9800',
-                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
-                fontSize: '0.9rem',
-                marginRight: '10px'
-            }}
-            title={isMonitoring ? `Monitoring ${monitorInterval} (Click to Stop)` : "Start Market Monitor"}
-          >
-            <Activity size={16} />
-            MON
-          </button>
+          <button onClick={() => isMonitoring ? (window.confirm("Stop?") && stopMonitor()) : setShowMonitorModal(true)} className={isMonitoring ? 'flashing-monitor' : ''} style={{ display: 'flex', gap: '5px', background: isMonitoring ? '#e65100' : 'transparent', color: isMonitoring ? 'white' : '#ff9800', border: '1px solid #ff9800', borderRadius: '4px', padding: '5px 12px', marginRight: '10px' }}><Activity size={16} /> MON</button>
 
-          {/* --- ANALYSIS BUTTON --- */}
-          <button
-            onClick={() => setShowAnalysis(!showAnalysis)}
-            style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                background: '#e600adff', color: '#d1d4dc', border: '1px solid #444',
-                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
-                fontSize: '0.9rem',
-                marginRight: '10px'
-            }}
-            title="Deep Analysis"
-          >
-            <Activity size={16} />
-            DA
-          </button>
+          <button onClick={() => setShowAnalysis(!showAnalysis)} style={{ display: 'flex', gap: '5px', background: '#e600adff', color: '#d1d4dc', border: '1px solid #444', borderRadius: '4px', padding: '5px 12px', marginRight: '10px' }}><Activity size={16} /> DA</button>
 
-          {/* --- SCANNER BUTTON --- */}
-          <button
-            onClick={() => setShowScanner(true)}
-            style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                background: '#0078d4', color: 'white', border: 'none',
-                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
-                fontSize: '0.9rem'
-            }}
-            title="Scan market for signals"
-          >
-            <Radar size={16} />
-            Scan
-          </button>
-
+          <button onClick={() => setShowScanner(true)} style={{ display: 'flex', gap: '5px', background: '#0078d4', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px' }}><Radar size={16} /> Scan</button>
         </div>
 
-        {/* CHART WRAPPER */}
-        <div 
-          className="ChartWrapper"
-          style={{ 
-            flex: '1 1 auto', 
-            position: 'relative', 
-            overflow: 'hidden',
-            width: '100%',
-            minHeight: 0 
-          }} 
-        >
+        <div className="ChartWrapper" style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden', width: '100%', minHeight: 0 }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-            <TradingChart
-              symbol={finalSymbol}
-              interval={inputInterval}
-              lValue={inputLValue}
-              useAdaptiveL={inputUseAdaptiveL}
-              apiKey={TWELVE_DATA_API_KEY}
-              enableRealtime={inputIsLive} 
-              autoUpdate={inputAutoUpdate}
-              showHotspots={inputShowHotspots} 
-              showForecast={inputShowForecast}
-            />
+            <TradingChart symbol={finalSymbol} interval={inputInterval} lValue={inputLValue} useAdaptiveL={inputUseAdaptiveL} apiKey={TWELVE_DATA_API_KEY} enableRealtime={inputIsLive} autoUpdate={inputAutoUpdate} showHotspots={inputShowHotspots} showForecast={inputShowForecast} />
           </div>
         </div>
 
-        {/* --- MODALS --- */}
-        {showScanner && (
-            <ScannerModal 
-                interval={inputInterval} 
-                onClose={() => setShowScanner(false)}
-                onSelectAsset={(symbol) => {
-                    setInputSymbol(symbol);
-                }}
-            />
-        )}
-        
-        {showAnalysis && (
-            <AnalysisModal
-                symbol={finalSymbol}
-                interval={inputInterval}
-                onClose={() => setShowAnalysis(false)}
-            />
-        )}
-
-        {showForwardTest && (
-            <ForwardTestModal 
-                onClose={() => setShowForwardTest(false)}
-            />
-        )}
-        
-        {showMonitorModal && (
-            <MonitorModal 
-                onClose={() => setShowMonitorModal(false)}
-                onStart={toggleMonitor}
-            />
-        )}
-
+        {showScanner && <ScannerModal interval={inputInterval} onClose={() => setShowScanner(false)} onSelectAsset={setInputSymbol} />}
+        {showAnalysis && <AnalysisModal symbol={finalSymbol} interval={inputInterval} onClose={() => setShowAnalysis(false)} />}
+        {showForwardTest && <ForwardTestModal onClose={() => setShowForwardTest(false)} />}
+        {showMonitorModal && <MonitorModal onClose={() => setShowMonitorModal(false)} onStart={toggleMonitor} />}
       </div>
-
-      <div className="RotateNotifier">
-        <p>Please rotate your device to portrait mode</p>
-      </div>
+      <div className="RotateNotifier"><p>Please rotate your device to portrait mode</p></div>
     </AuthForm>
   );
 }
 
-function App() {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/auth" element={<Platform />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
-  );
-}
+function App() { return <Router><Routes><Route path="/" element={<LandingPage />} /><Route path="/auth" element={<Platform />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></Router>; }
 
 export default App;
