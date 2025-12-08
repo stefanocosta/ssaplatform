@@ -7,6 +7,7 @@ import LandingPage from './components/LandingPage';
 import ScannerModal from './components/ScannerModal'; 
 import AnalysisModal from './components/AnalysisModal'; 
 import ForwardTestModal from './components/ForwardTestModal'; 
+import MonitorModal from './components/MonitorModal'; // NEW IMPORT
 import './App.css';
 
 function Platform() {
@@ -28,6 +29,11 @@ function Platform() {
   const [showScanner, setShowScanner] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false); 
   const [showForwardTest, setShowForwardTest] = useState(false); 
+
+  // --- NEW STATE FOR MONITOR ---
+  const [showMonitorModal, setShowMonitorModal] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [monitorInterval, setMonitorInterval] = useState(null); // '15min', '1h' etc
   
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
@@ -47,6 +53,95 @@ function Platform() {
       setLookupCount(c => c + 1);
     }
   }, [inputSymbol]);
+
+  // --- MONITORING LOGIC ---
+  useEffect(() => {
+    let timerId;
+    let keepAliveId;
+
+    if (isMonitoring && monitorInterval) {
+        console.log(`Creating Monitor Loop for ${monitorInterval}`);
+
+        // 1. KEEP ALIVE (Ping every 5 mins to prevent idle logout)
+        keepAliveId = setInterval(async () => {
+             const token = localStorage.getItem('access_token');
+             try { await fetch('/api/user-info', { headers: { 'Authorization': `Bearer ${token}` } }); } catch(e){}
+        }, 5 * 60 * 1000);
+
+        // 2. SCANNER LOOP
+        const checkTimeAndScan = async () => {
+            const now = new Date();
+            const min = now.getMinutes();
+            const sec = now.getSeconds();
+
+            // Determine if we should scan based on interval
+            let shouldScan = false;
+            
+            // We scan at the very start of the minute (second === 0)
+            // But to be safe against lag, we check if seconds < 5
+            if (sec < 5) {
+                if (monitorInterval === '1min') shouldScan = true;
+                else if (monitorInterval === '5min' && min % 5 === 0) shouldScan = true;
+                else if (monitorInterval === '15min' && min % 15 === 0) shouldScan = true;
+                else if (monitorInterval === '30min' && min % 30 === 0) shouldScan = true;
+                else if (monitorInterval === '1h' && min === 0) shouldScan = true;
+                else if (monitorInterval === '4h' && min === 0 && now.getHours() % 4 === 0) shouldScan = true;
+            }
+
+            if (shouldScan) {
+                console.log("🔔 Monitor Triggered: Scanning Market...");
+                const token = localStorage.getItem('access_token');
+                try {
+                    // Call the existing Scan Endpoint
+                    const res = await fetch(`/api/scan?interval=${monitorInterval}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const results = await res.json();
+                    
+                    // Filter for Active Signals
+                    const signals = results.filter(r => r.signal === 'BUY' || r.signal === 'SELL');
+                    
+                    if (signals.length > 0) {
+                        // SEND BROWSER NOTIFICATION
+                        if (Notification.permission === "granted") {
+                            const body = signals.map(s => `${s.symbol}: ${s.signal}`).join('\n');
+                            new Notification(`🚨 ${signals.length} Signals Detected!`, {
+                                body: body,
+                                icon: '/favicon.ico' // Ensure you have an icon or remove this line
+                            });
+                        }
+                        // Optional: Play a sound
+                        // const audio = new Audio('/alert.mp3'); audio.play();
+                    }
+                } catch (err) {
+                    console.error("Monitor Scan Failed", err);
+                }
+                
+                // Sleep for 1 minute to avoid double-triggering in the same minute
+                // (The interval loop handles the sleep implicitly by waiting for next tick)
+            }
+        };
+
+        // Check every 5 seconds (sufficient precision)
+        timerId = setInterval(checkTimeAndScan, 5000);
+    }
+
+    return () => {
+        if (timerId) clearInterval(timerId);
+        if (keepAliveId) clearInterval(keepAliveId);
+    };
+  }, [isMonitoring, monitorInterval]);
+
+  const toggleMonitor = (interval) => {
+      setMonitorInterval(interval);
+      setIsMonitoring(true);
+      setShowMonitorModal(false);
+  };
+
+  const stopMonitor = () => {
+      setIsMonitoring(false);
+      setMonitorInterval(null);
+  };
 
   const handleSymbolChange = (event) => {
     setInputSymbol(event.target.value);
@@ -211,13 +306,38 @@ function Platform() {
                 background: '#00c853', color: 'white', border: 'none', 
                 borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
                 fontSize: '0.9rem',
-                marginLeft: 'auto', // ONLY the first button in the right-group needs this
+                marginLeft: 'auto', // Pushes buttons to the right
                 marginRight: '10px'
             }}
             title="View Forward Test Results"
           >
             <FlaskConical size={16} />
             Test
+          </button>
+          
+          {/* --- MONITOR BUTTON (New) --- */}
+          <button
+            onClick={() => {
+                if (isMonitoring) {
+                    if (window.confirm("Stop Monitoring?")) stopMonitor();
+                } else {
+                    setShowMonitorModal(true);
+                }
+            }}
+            className={isMonitoring ? 'flashing-monitor' : ''}
+            style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                background: isMonitoring ? '#e65100' : 'transparent', 
+                color: isMonitoring ? 'white' : '#ff9800', 
+                border: '1px solid #ff9800',
+                borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
+                fontSize: '0.9rem',
+                marginRight: '10px'
+            }}
+            title={isMonitoring ? `Monitoring ${monitorInterval} (Click to Stop)` : "Start Market Monitor"}
+          >
+            <Activity size={16} />
+            MON
           </button>
 
           {/* --- ANALYSIS BUTTON --- */}
@@ -228,7 +348,7 @@ function Platform() {
                 background: '#e600adff', color: '#d1d4dc', border: '1px solid #444',
                 borderRadius: '4px', padding: '5px 12px', cursor: 'pointer',
                 fontSize: '0.9rem',
-                marginRight: '10px' // Spacing between buttons
+                marginRight: '10px'
             }}
             title="Deep Analysis"
           >
@@ -301,6 +421,13 @@ function Platform() {
         {showForwardTest && (
             <ForwardTestModal 
                 onClose={() => setShowForwardTest(false)}
+            />
+        )}
+        
+        {showMonitorModal && (
+            <MonitorModal 
+                onClose={() => setShowMonitorModal(false)}
+                onStart={toggleMonitor}
             />
         )}
 
