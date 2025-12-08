@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, ArrowUp, ArrowDown } from 'lucide-react';
 
 const ForwardTestModal = ({ onClose }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    
+    // Default sort: Entry Date Descending (newest first)
+    const [sortConfig, setSortConfig] = useState({ key: 'entry_date', direction: 'desc' });
 
     useEffect(() => {
         const fetchResults = async () => {
@@ -22,6 +25,84 @@ const ForwardTestModal = ({ onClose }) => {
         };
         fetchResults();
     }, []);
+
+    // --- SORTING LOGIC ---
+    const sortedTrades = useMemo(() => {
+        if (!data?.trades) return [];
+        
+        let sortableItems = [...data.trades];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                // 1. CUSTOM MAPPINGS
+                // Trend/Forecast: UP > FLAT > DOWN
+                if (sortConfig.key === 'trend' || sortConfig.key === 'forecast') {
+                    const map = { 'UP': 3, 'FLAT': 2, 'DOWN': 1, '-': 0 };
+                    aValue = map[aValue] || 0;
+                    bValue = map[bValue] || 0;
+                } 
+                // Direction: LONG > SHORT
+                else if (sortConfig.key === 'direction') {
+                    const map = { 'LONG': 2, 'SHORT': 1 };
+                    aValue = map[aValue] || 0;
+                    bValue = map[bValue] || 0;
+                }
+                // Status: OPEN > CLOSED
+                else if (sortConfig.key === 'status') {
+                    const map = { 'OPEN': 2, 'CLOSED': 1 };
+                    aValue = map[aValue] || 0;
+                    bValue = map[bValue] || 0;
+                }
+                // Dates: Convert to Timestamp
+                else if (sortConfig.key === 'entry_date' || sortConfig.key === 'exit_date') {
+                    aValue = aValue === '-' ? 0 : new Date(aValue).getTime();
+                    bValue = bValue === '-' ? 0 : new Date(bValue).getTime();
+                }
+                // Handle nulls/undefined for numbers (like exit_price)
+                else {
+                    if (aValue === null || aValue === undefined || aValue === '-') aValue = -Infinity;
+                    if (bValue === null || bValue === undefined || bValue === '-') bValue = -Infinity;
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [data, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'desc'; // Default to descending for numbers/dates usually
+        if (sortConfig.key === key && sortConfig.direction === 'desc') {
+            direction = 'asc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    // Helper to render sortable table headers
+    const createSortHeader = (label, key, align = 'left') => (
+        <th 
+            style={{ padding: '15px 10px', cursor: 'pointer', userSelect: 'none', textAlign: align }}
+            onClick={() => requestSort(key)}
+            title={`Sort by ${label}`}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: align === 'right' ? 'flex-end' : 'flex-start', gap: '5px' }}>
+                {label}
+                {sortConfig.key === key && (
+                    sortConfig.direction === 'asc' 
+                    ? <ArrowUp size={14} color="#0078d4" /> 
+                    : <ArrowDown size={14} color="#0078d4" />
+                )}
+            </div>
+        </th>
+    );
 
     if (!data && loading) return null;
 
@@ -43,7 +124,6 @@ const ForwardTestModal = ({ onClose }) => {
             backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000,
             display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
-            {/* 1. RESPONSIVE CONTAINER: width 95% for mobile, max 1100px for desktop */}
             <div style={{
                 width: '95%', maxWidth: '1100px', 
                 height: '85vh', backgroundColor: '#1e1e1e',
@@ -61,7 +141,7 @@ const ForwardTestModal = ({ onClose }) => {
                     <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X /></button>
                 </div>
 
-                {/* 2. WRAPPING SUMMARY CARDS: flexWrap lets them stack on mobile */}
+                {/* Summary Cards */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '15px', backgroundColor: '#252525' }}>
                     <div style={{ flex: '1 1 150px', background: '#333', padding: '15px', borderRadius: '8px' }}>
                         <div style={{ color: '#aaa', fontSize: '0.75rem' }}>NET PNL</div>
@@ -83,35 +163,34 @@ const ForwardTestModal = ({ onClose }) => {
                     </div>
                 </div>
 
-                {/* 3. SCROLLABLE TABLE CONTAINER */}
+                {/* Table */}
                 <div style={{ flex: 1, overflow: 'auto', padding: '0' }}>
                 <table style={{ 
                         width: '100%', 
-                        minWidth: '900px', // Increased min-width to fit new column
+                        minWidth: '900px',
                         borderCollapse: 'collapse', 
                         color: '#ddd', 
                         fontSize: '0.85rem' 
                     }}>
                         <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', textAlign: 'left', zIndex: 10 }}>
                             <tr style={{ borderBottom: '1px solid #444', color: '#888' }}>
-                                <th style={{ padding: '15px 10px' }}>Asset</th>
-                                <th>Int</th>
-                                <th>Dir</th>
-                                <th>TRND</th>
-                                <th>CYC</th>
-                                <th>FST</th>
-                                <th>FCST</th>
-                                <th>Status</th>
-                                <th>Entry</th>
-                                <th>Time</th>
-                                {/* --- NEW HEADER --- */}
-                                <th>Exit Time</th>
-                                <th>Exit $</th> 
-                                <th>PnL</th>
+                                {createSortHeader('Asset', 'symbol')}
+                                {createSortHeader('Int', 'interval')}
+                                {createSortHeader('Dir', 'direction')}
+                                {createSortHeader('TRND', 'trend')}
+                                {createSortHeader('CYC', 'cycle')}
+                                {createSortHeader('FST', 'fast')}
+                                {createSortHeader('FCST', 'forecast')}
+                                {createSortHeader('Status', 'status')}
+                                {createSortHeader('Entry $', 'entry_price')}
+                                {createSortHeader('Time', 'entry_date')}
+                                {createSortHeader('Exit Time', 'exit_date')}
+                                {createSortHeader('Exit $', 'exit_price')}
+                                {createSortHeader('PnL', 'pnl')}
                             </tr>
                         </thead>
                         <tbody>
-                            {data?.trades.map(trade => (
+                            {sortedTrades.map(trade => (
                                 <tr key={trade.id} style={{ borderBottom: '1px solid #333' }}>
                                     <td style={{ padding: '10px', fontWeight: 'bold' }}>{trade.symbol}</td>
                                     <td>{trade.interval}</td>
@@ -130,23 +209,17 @@ const ForwardTestModal = ({ onClose }) => {
                                     <td style={{ fontWeight: 'bold', color: getDirColor(trade.forecast) }}>{trade.forecast}</td>
                                     <td style={{ color: trade.status === 'OPEN' ? '#29b6f6' : '#888' }}>{trade.status}</td>
                                     
-                                    {/* Entry Price */}
                                     <td>{trade.entry_price.toFixed(2)}</td>
-                                    
-                                    {/* Entry Time */}
                                     <td style={{ fontSize: '0.8rem', color: '#aaa', whiteSpace: 'nowrap' }}>{trade.entry_date}</td>
                                     
-                                    {/* --- NEW: Exit Time --- */}
                                     <td style={{ fontSize: '0.8rem', color: '#aaa', whiteSpace: 'nowrap' }}>
                                         {trade.exit_date !== '-' ? trade.exit_date : ''}
                                     </td>
 
-                                    {/* Exit Price */}
                                     <td>{trade.exit_price ? trade.exit_price.toFixed(2) : '-'}</td>
                                     
-                                    {/* PnL (Now shows Live PnL for Open trades) */}
                                     <td style={{ fontWeight: 'bold', color: trade.pnl > 0 ? '#00c853' : (trade.pnl < 0 ? '#ff3d00' : '#888') }}>
-                                        {trade.pnl !== 0 ? `$${trade.pnl} (${trade.pnl_pct}%)` : '-'}
+                                        {trade.pnl !== 0 ? `$${trade.pnl.toFixed(2)} (${trade.pnl_pct.toFixed(2)}%)` : '-'}
                                     </td>
                                 </tr>
                             ))}
