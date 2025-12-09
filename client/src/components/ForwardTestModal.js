@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, ArrowUp, ArrowDown } from 'lucide-react';
+import { X, ArrowUp, ArrowDown, Search, Filter } from 'lucide-react';
 
 const ForwardTestModal = ({ onClose }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    
+    // --- FILTERS STATE ---
+    const [filterInterval, setFilterInterval] = useState(null); // null = All
+    const [filterStatus, setFilterStatus] = useState('ALL');    // ALL, OPEN, CLOSED
+    const [filterAsset, setFilterAsset] = useState('');
     
     // Default sort: Entry Date Descending (newest first)
     const [sortConfig, setSortConfig] = useState({ key: 'entry_date', direction: 'desc' });
@@ -26,11 +31,69 @@ const ForwardTestModal = ({ onClose }) => {
         fetchResults();
     }, []);
 
-    // --- SORTING LOGIC ---
+    // --- 1. FILTERING & STATS CALCULATION ---
+    const dashboardData = useMemo(() => {
+        if (!data?.trades) return { trades: [], stats: null };
+
+        // A. Filter the Trades
+        const filtered = data.trades.filter(t => {
+            // Interval Filter
+            if (filterInterval && t.interval !== filterInterval) return false;
+            // Status Filter
+            if (filterStatus !== 'ALL' && t.status !== filterStatus) return false;
+            // Asset Filter (Partial Match)
+            if (filterAsset && !t.symbol.includes(filterAsset.toUpperCase())) return false;
+            return true;
+        });
+
+        // B. Calculate Dynamic Stats for the Filtered View
+        const stats = {
+            total_pnl: 0,
+            win_count: 0,
+            loss_count: 0,
+            closed_count: 0,
+            open_count: 0,
+            sum_wins: 0,
+            sum_losses: 0
+        };
+
+        filtered.forEach(t => {
+            if (t.status === 'OPEN') {
+                stats.open_count++;
+            } else {
+                stats.closed_count++;
+                stats.total_pnl += (t.pnl || 0);
+                if ((t.pnl || 0) > 0) {
+                    stats.win_count++;
+                    stats.sum_wins += t.pnl;
+                } else {
+                    stats.loss_count++;
+                    stats.sum_losses += Math.abs(t.pnl || 0);
+                }
+            }
+        });
+
+        const win_rate = stats.closed_count > 0 ? (stats.win_count / stats.closed_count * 100) : 0;
+        const avg_win = stats.win_count > 0 ? (stats.sum_wins / stats.win_count) : 0;
+        const avg_loss = stats.loss_count > 0 ? (stats.sum_losses / stats.loss_count) : 0;
+
+        return {
+            trades: filtered,
+            stats: {
+                total_pnl: stats.total_pnl,
+                win_rate: win_rate,
+                total_trades: stats.closed_count,
+                open_trades: stats.open_count,
+                avg_win: avg_win,
+                avg_loss: avg_loss
+            }
+        };
+
+    }, [data, filterInterval, filterStatus, filterAsset]);
+
+    // --- 2. SORTING LOGIC (Applied to Filtered Data) ---
     const sortedTrades = useMemo(() => {
-        if (!data?.trades) return [];
-        
-        let sortableItems = [...data.trades];
+        let sortableItems = [...dashboardData.trades];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
                 let aValue = a[sortConfig.key];
@@ -63,7 +126,7 @@ const ForwardTestModal = ({ onClose }) => {
             });
         }
         return sortableItems;
-    }, [data, sortConfig]);
+    }, [dashboardData, sortConfig]);
 
     const requestSort = (key) => {
         let direction = 'desc'; 
@@ -92,6 +155,9 @@ const ForwardTestModal = ({ onClose }) => {
 
     if (!data && loading) return null;
 
+    // Use computed stats for display (fallback to global summary if something fails, though dashboardData.stats handles it)
+    const displayStats = dashboardData.stats || data?.summary;
+
     const getDirColor = (dir) => {
         if (dir === 'UP') return '#00c853';
         if (dir === 'DOWN') return '#ff3d00';
@@ -113,23 +179,36 @@ const ForwardTestModal = ({ onClose }) => {
         </div>
     );
 
-    // Helper for Timeframe Breakdown
-    const IntervalCard = ({ data }) => (
-        <div style={{ background: '#2a2a2a', border: '1px solid #444', borderRadius: '6px', padding: '8px', minWidth: '130px', flex: 1 }}>
-            <div style={{ color: '#0078d4', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '5px', borderBottom:'1px solid #444', paddingBottom:'3px' }}>
-                {data.interval}
+    // Helper for Timeframe Breakdown (Clickable)
+    const IntervalCard = ({ intervalData, isActive, onClick }) => (
+        <div 
+            onClick={onClick}
+            style={{ 
+                background: isActive ? '#3a3a45' : '#2a2a2a', 
+                border: isActive ? '1px solid #0078d4' : '1px solid #444', 
+                borderRadius: '6px', padding: '8px', minWidth: '130px', flex: 1,
+                cursor: 'pointer', transition: 'all 0.2s'
+            }}
+        >
+            <div style={{ color: isActive ? '#0078d4' : '#d1d4dc', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '5px', borderBottom:'1px solid #444', paddingBottom:'3px', display:'flex', justifyContent:'space-between' }}>
+                {intervalData.interval}
+                {isActive && <span style={{fontSize:'0.7rem', background:'#0078d4', color:'white', padding:'0 4px', borderRadius:'3px'}}>ACTIVE</span>}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '2px' }}>
                 <span style={{color: '#aaa'}}>PnL:</span>
-                <span style={{ fontWeight: 'bold', color: data.pnl >= 0 ? '#00c853' : '#ff3d00' }}>${data.pnl}</span>
+                <span style={{ fontWeight: 'bold', color: intervalData.pnl >= 0 ? '#00c853' : '#ff3d00' }}>${intervalData.pnl}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '2px' }}>
                 <span style={{color: '#aaa'}}>Win%:</span>
-                <span style={{ color: 'white' }}>{data.win_rate}%</span>
+                <span style={{ color: 'white' }}>{intervalData.win_rate}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '2px' }}>
+                <span style={{color: '#aaa'}}>Open:</span>
+                <span style={{ color: '#29b6f6' }}>{intervalData.open}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                <span style={{color: '#aaa'}}>Open:</span>
-                <span style={{ color: '#29b6f6' }}>{data.open}</span>
+                <span style={{color: '#aaa'}}>Closed:</span>
+                <span style={{ color: '#aaa' }}>{intervalData.closed}</span>
             </div>
         </div>
     );
@@ -151,7 +230,7 @@ const ForwardTestModal = ({ onClose }) => {
                     <div>
                         <h2 style={{ color: 'white', margin: 0, fontSize: '1.2rem' }}>Forward Test Results</h2>
                         <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '5px' }}>
-                            Simulated $1000 entries | Market Snapshot @ Entry
+                            Dynamic Filter Analysis | Simulated Entries
                         </div>
                     </div>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X /></button>
@@ -160,25 +239,77 @@ const ForwardTestModal = ({ onClose }) => {
                 {/* --- STATS DASHBOARD --- */}
                 <div style={{ padding: '15px', backgroundColor: '#252525', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     
-                    {/* Row 1: Global Stats */}
+                    {/* Row 1: Filtered Stats (Dynamic) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                         <StatCard 
                             label="Net PnL" 
-                            value={`$${data?.summary.total_pnl}`} 
-                            color={data?.summary.total_pnl >= 0 ? '#00c853' : '#ff3d00'} 
+                            value={`$${displayStats.total_pnl.toFixed(2)}`} 
+                            color={displayStats.total_pnl >= 0 ? '#00c853' : '#ff3d00'} 
                         />
-                        <StatCard label="Win Rate" value={`${data?.summary.win_rate}%`} />
-                        <StatCard label="Closed Trades" value={data?.summary.total_trades} />
-                        <StatCard label="Open Trades" value={data?.summary.open_trades} color="#29b6f6" />
-                        <StatCard label="Avg Win" value={`$${data?.summary.avg_win}`} color="#00c853" />
-                        <StatCard label="Avg Loss" value={`$${data?.summary.avg_loss}`} color="#ff3d00" />
+                        <StatCard label="Win Rate" value={`${displayStats.win_rate.toFixed(1)}%`} />
+                        <StatCard label="Closed Trades" value={displayStats.total_trades} />
+                        <StatCard label="Open Trades" value={displayStats.open_trades} color="#29b6f6" />
+                        <StatCard label="Avg Win" value={`$${displayStats.avg_win.toFixed(2)}`} color="#00c853" />
+                        <StatCard label="Avg Loss" value={`$${displayStats.avg_loss.toFixed(2)}`} color="#ff3d00" />
                     </div>
 
-                    {/* Row 2: Timeframe Breakdown */}
+                    {/* Row 2: Timeframe Breakdown (Clickable Filters) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '5px' }}>
                         {data?.intervals.map(intv => (
-                            <IntervalCard key={intv.interval} data={intv} />
+                            <IntervalCard 
+                                key={intv.interval} 
+                                intervalData={intv} 
+                                isActive={filterInterval === intv.interval}
+                                onClick={() => setFilterInterval(filterInterval === intv.interval ? null : intv.interval)}
+                            />
                         ))}
+                    </div>
+
+                    {/* Row 3: Filter Controls */}
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '5px', background:'#333', padding:'8px', borderRadius:'6px' }}>
+                        <Filter size={16} color="#888" />
+                        
+                        {/* Asset Filter */}
+                        <div style={{ position: 'relative' }}>
+                            <Search size={14} color="#888" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }} />
+                            <input 
+                                type="text" 
+                                placeholder="Filter Asset (e.g. EUR)" 
+                                value={filterAsset}
+                                onChange={(e) => setFilterAsset(e.target.value)}
+                                style={{ 
+                                    padding: '6px 6px 6px 28px', borderRadius: '4px', border: '1px solid #555', 
+                                    background: '#222', color: 'white', fontSize: '0.85rem', width: '150px'
+                                }}
+                            />
+                        </div>
+
+                        {/* Status Filter */}
+                        <select 
+                            value={filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value)}
+                            style={{ 
+                                padding: '6px', borderRadius: '4px', border: '1px solid #555', 
+                                background: '#222', color: 'white', fontSize: '0.85rem'
+                            }}
+                        >
+                            <option value="ALL">Status: All</option>
+                            <option value="OPEN">Status: Open</option>
+                            <option value="CLOSED">Status: Closed</option>
+                        </select>
+
+                        {/* Clear Button */}
+                        {(filterInterval || filterStatus !== 'ALL' || filterAsset) && (
+                            <button 
+                                onClick={() => { setFilterInterval(null); setFilterStatus('ALL'); setFilterAsset(''); }}
+                                style={{ 
+                                    marginLeft: 'auto', background: 'none', border: 'none', 
+                                    color: '#f44336', fontSize: '0.8rem', cursor: 'pointer', fontWeight:'bold' 
+                                }}
+                            >
+                                Clear Filters
+                            </button>
+                        )}
                     </div>
                 </div>
 
