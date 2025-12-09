@@ -5,7 +5,7 @@ from app.services.data_manager import TRACKED_ASSETS
 from app.services.signal_engine import analyze_market_snapshot
 import pandas as pd
 
-INVESTMENT_AMOUNT = 10000.0
+INVESTMENT_AMOUNT = 1000.0
 
 def get_interval_minutes(interval):
     """Returns the duration of the interval in minutes."""
