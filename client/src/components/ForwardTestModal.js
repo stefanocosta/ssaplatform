@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, ArrowUp, ArrowDown, Search, Filter, TrendingUp, List } from 'lucide-react';
+import { X, ArrowUp, ArrowDown, Search, Filter, TrendingUp, List, CheckSquare, Square, ChevronDown } from 'lucide-react';
+
+// --- DEFINED ASSETS (Matches Main App) ---
+const ASSET_CATEGORIES = {
+    'Crypto': ['XAU/USD','BTC/USD', 'ETH/USD', 'ADA/USD', 'BNB/USD', 'DOGE/USD', 'XRP/USD', 'SOL/USD', 'FET/USD','ICP/USD'],
+    'Forex': ['EUR/USD', 'EUR/CAD', 'EUR/AUD','EUR/JPY', 'EUR/GBP','AUD/CAD','AUD/USD','GBP/CAD', 'GBP/USD', 'USD/CAD', 'USD/CHF', 'USD/JPY'],
+    'Stocks': ['AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
+};
 
 // --- INTERNAL COMPONENT: FULL SCREEN EQUITY CHART ---
 const LargeEquityChart = ({ trades }) => {
@@ -138,12 +145,17 @@ const ForwardTestModal = ({ onClose }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     
-    // --- FILTERS ---
+    // --- FILTERS STATE ---
     const [filterInterval, setFilterInterval] = useState(null); 
     const [filterStatus, setFilterStatus] = useState('ALL');    
+    const [filterDirection, setFilterDirection] = useState('ALL'); 
     const [filterAsset, setFilterAsset] = useState('');
     const [filterTrend, setFilterTrend] = useState('ALL'); 
     const [filterForecast, setFilterForecast] = useState('ALL'); 
+
+    // --- ASSET MULTI-SELECT ---
+    const [selectedAssets, setSelectedAssets] = useState(new Set());
+    const [showAssetMenu, setShowAssetMenu] = useState(false);
 
     // --- VIEW MODE ---
     const [showEquity, setShowEquity] = useState(false);
@@ -169,6 +181,13 @@ const ForwardTestModal = ({ onClose }) => {
         fetchResults();
     }, []);
 
+    const toggleAsset = (symbol) => {
+        const newSet = new Set(selectedAssets);
+        if (newSet.has(symbol)) newSet.delete(symbol);
+        else newSet.add(symbol);
+        setSelectedAssets(newSet);
+    };
+
     // --- FILTER & STATS LOGIC ---
     const dashboardData = useMemo(() => {
         if (!data?.trades) return { trades: [], stats: null };
@@ -176,7 +195,15 @@ const ForwardTestModal = ({ onClose }) => {
         const filtered = data.trades.filter(t => {
             if (filterInterval && t.interval !== filterInterval) return false;
             if (filterStatus !== 'ALL' && t.status !== filterStatus) return false;
-            if (filterAsset && !t.symbol.includes(filterAsset.toUpperCase())) return false;
+            if (filterDirection !== 'ALL' && t.direction !== filterDirection) return false;
+
+            // Asset Filter: Check Set OR Search String
+            if (selectedAssets.size > 0) {
+                if (!selectedAssets.has(t.symbol)) return false;
+            } else if (filterAsset) {
+                if (!t.symbol.includes(filterAsset.toUpperCase())) return false;
+            }
+
             if (filterTrend !== 'ALL') {
                 const isFollow = (t.direction === 'LONG' && t.trend === 'UP') || (t.direction === 'SHORT' && t.trend === 'DOWN');
                 if (filterTrend === 'FOLLOW' && !isFollow) return false;
@@ -212,7 +239,7 @@ const ForwardTestModal = ({ onClose }) => {
                 avg_loss: stats.loss_count > 0 ? (stats.sum_losses / stats.loss_count) : 0
             }
         };
-    }, [data, filterInterval, filterStatus, filterAsset, filterTrend, filterForecast]);
+    }, [data, filterInterval, filterStatus, filterDirection, filterAsset, selectedAssets, filterTrend, filterForecast]);
 
     // --- SORTING ---
     const sortedTrades = useMemo(() => {
@@ -221,8 +248,6 @@ const ForwardTestModal = ({ onClose }) => {
             sortableItems.sort((a, b) => {
                 let aValue = a[sortConfig.key];
                 let bValue = b[sortConfig.key];
-                
-                // Mappings
                 if (sortConfig.key === 'trend' || sortConfig.key === 'forecast') {
                     const map = { 'UP': 3, 'FLAT': 2, 'DOWN': 1, '-': 0 };
                     aValue = map[aValue] || 0; bValue = map[bValue] || 0;
@@ -289,7 +314,7 @@ const ForwardTestModal = ({ onClose }) => {
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ width: '95%', maxWidth: '1100px', height: '90vh', backgroundColor: '#1e1e1e', borderRadius: '12px', display: 'flex', flexDirection: 'column', border: '1px solid #444', boxShadow: '0 0 20px black' }}>
                 
-                {/* 1. Header with Controls */}
+                {/* 1. Header */}
                 <div style={{ padding: '15px 20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                         <h2 style={{ color: 'white', margin: 0, fontSize: '1.2rem' }}>Forward Test</h2>
@@ -314,32 +339,90 @@ const ForwardTestModal = ({ onClose }) => {
                     </div>
                 </div>
 
-                {/* 2. Global Filters (Always Visible) */}
+                {/* 2. Global Filters */}
                 <div style={{ padding: '10px 15px', background: '#252525', borderBottom: '1px solid #333', display: 'flex', gap: '10px', alignItems: 'center', flexWrap:'wrap' }}>
                     <div style={{display:'flex', alignItems:'center', gap:'6px', marginRight:'10px'}}>
                         <Filter size={16} color="#0078d4" />
                         <span style={{fontSize:'0.75rem', fontWeight:'bold', color:'#aaa'}}>FILTERS</span>
                     </div>
                     
-                    <div style={{ position: 'relative' }}>
-                        <Search size={14} color="#888" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }} />
-                        <input type="text" placeholder="Asset..." value={filterAsset} onChange={(e) => setFilterAsset(e.target.value)} style={{ padding: '6px 6px 6px 28px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem', width: '100px' }} />
+                    {/* ASSET FILTER (Categorized Mega Menu) */}
+                    <div style={{ position: 'relative', display: 'flex', gap: '2px' }}>
+                        <div style={{ position: 'relative' }}>
+                            <Search size={14} color="#888" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }} />
+                            <input 
+                                type="text" 
+                                placeholder={selectedAssets.size > 0 ? `${selectedAssets.size} Selected` : "Asset..."}
+                                value={filterAsset} 
+                                onChange={(e) => setFilterAsset(e.target.value)} 
+                                disabled={selectedAssets.size > 0}
+                                style={{ 
+                                    padding: '6px 6px 6px 28px', borderRadius: '4px', border: '1px solid #555', 
+                                    background: selectedAssets.size > 0 ? '#333' : '#1a1a1a', 
+                                    color: 'white', fontSize: '0.85rem', width: '100px' 
+                                }} 
+                            />
+                        </div>
+                        
+                        <button 
+                            onClick={() => setShowAssetMenu(!showAssetMenu)}
+                            style={{ 
+                                background: selectedAssets.size > 0 ? '#0078d4' : '#333', 
+                                border: '1px solid #555', borderRadius: '4px', color: 'white', 
+                                padding: '0 8px', cursor: 'pointer', display: 'flex', alignItems: 'center'
+                            }}
+                        >
+                            <ChevronDown size={14} />
+                        </button>
+
+                        {/* MEGA MENU POPUP */}
+                        {showAssetMenu && (
+                            <div style={{ 
+                                position: 'absolute', top: '100%', left: 0, width: '450px', maxHeight: '400px', overflowY: 'auto',
+                                background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, 
+                                padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                                display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px'
+                            }}>
+                                {Object.entries(ASSET_CATEGORIES).map(([category, assets]) => (
+                                    <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                        <div style={{ color: '#0078d4', fontSize: '0.75rem', fontWeight: 'bold', borderBottom: '1px solid #444', paddingBottom: '4px', marginBottom: '4px' }}>
+                                            {category.toUpperCase()}
+                                        </div>
+                                        {assets.map(sym => (
+                                            <button 
+                                                key={sym}
+                                                onClick={() => toggleAsset(sym)}
+                                                style={{
+                                                    textAlign: 'left', background: selectedAssets.has(sym) ? '#0078d4' : '#333',
+                                                    color: selectedAssets.has(sym) ? 'white' : '#ccc',
+                                                    border: 'none', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem',
+                                                    transition: 'all 0.1s'
+                                                }}
+                                            >
+                                                {sym}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ))}
+                                
+                                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #444', paddingTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button onClick={() => {setSelectedAssets(new Set());}} style={{background:'none', border:'none', color:'#f44336', cursor:'pointer', marginRight:'15px', fontSize:'0.8rem'}}>Clear All</button>
+                                    <button onClick={() => setShowAssetMenu(false)} style={{background:'#0078d4', border:'none', color:'white', padding:'5px 15px', borderRadius:'4px', cursor:'pointer', fontSize:'0.8rem', fontWeight:'bold'}}>Done</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}>
                         <option value="ALL">Status: All</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option>
                     </select>
 
-                    {/* NEW: Interval Dropdown (Inserted between Status and Trend) */}
-                    <select 
-                        value={filterInterval || 'ALL'} 
-                        onChange={(e) => setFilterInterval(e.target.value === 'ALL' ? null : e.target.value)} 
-                        style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}
-                    >
-                        <option value="ALL">Interval: All</option>
-                        <option value="15min">15min</option>
-                        <option value="1h">1 Hour</option>
-                        <option value="4h">4 Hours</option>
+                    <select value={filterDirection} onChange={(e) => setFilterDirection(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}>
+                        <option value="ALL">Pos: All</option><option value="LONG">Long</option><option value="SHORT">Short</option>
+                    </select>
+
+                    <select value={filterInterval || 'ALL'} onChange={(e) => setFilterInterval(e.target.value === 'ALL' ? null : e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}>
+                        <option value="ALL">Int: All</option><option value="15min">15min</option><option value="1h">1 Hour</option><option value="4h">4 Hours</option>
                     </select>
 
                     <select value={filterTrend} onChange={(e) => setFilterTrend(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}>
@@ -349,15 +432,14 @@ const ForwardTestModal = ({ onClose }) => {
                         <option value="ALL">Forecast: All</option><option value="WITH">With Forecast</option><option value="AGAINST">Against Forecast</option>
                     </select>
 
-                    {(filterInterval || filterStatus !== 'ALL' || filterAsset || filterTrend !== 'ALL' || filterForecast !== 'ALL') && (
-                        <button onClick={() => { setFilterInterval(null); setFilterStatus('ALL'); setFilterAsset(''); setFilterTrend('ALL'); setFilterForecast('ALL'); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f44336', fontSize: '0.75rem', cursor: 'pointer', fontWeight:'bold' }}>RESET FILTERS</button>
+                    {(filterInterval || filterStatus !== 'ALL' || filterDirection !== 'ALL' || filterAsset || selectedAssets.size > 0 || filterTrend !== 'ALL' || filterForecast !== 'ALL') && (
+                        <button onClick={() => { setFilterInterval(null); setFilterStatus('ALL'); setFilterDirection('ALL'); setFilterAsset(''); setSelectedAssets(new Set()); setFilterTrend('ALL'); setFilterForecast('ALL'); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f44336', fontSize: '0.75rem', cursor: 'pointer', fontWeight:'bold' }}>RESET FILTERS</button>
                     )}
                 </div>
 
-                {/* 3. Main Content Area */}
+                {/* 3. Main Content */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column' }}>
                     
-                    {/* STATS (Visible in Both Views) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
                         <StatCard label="Net PnL" value={`$${displayStats.total_pnl.toFixed(2)}`} color={displayStats.total_pnl >= 0 ? '#00c853' : '#ff3d00'} />
                         <StatCard label="Win Rate" value={`${displayStats.win_rate.toFixed(1)}%`} />
