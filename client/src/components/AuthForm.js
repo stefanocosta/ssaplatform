@@ -199,7 +199,7 @@ const AuthForm = ({ children }) => {
              {/* LEFT: Title */}
             <div style={{ display: 'flex', alignItems: 'center' }}>
                 <h1 style={{ color: '#d1d4dc', fontSize: isMobile ? '1.1rem' : '1.2rem', margin: 0, fontWeight: 'bold' }}>
-                    {isMobile ? 'SSA TP 3.4' : 'SSA Trading Platform 3.4'}
+                    {isMobile ? 'SSA TP 3.5' : 'SSA Trading Platform 3.5'}
                 </h1>
 
                 {/* Desktop: Manual Button next to title */}

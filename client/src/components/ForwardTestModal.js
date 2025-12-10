@@ -31,8 +31,7 @@ const LargeEquityChart = ({ trades }) => {
         return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>Not enough closed trades to plot.</div>;
     }
 
-    // 2. Dimensions (Dynamic)
-    // We use a fixed coordinate system for SVG logic, but CSS scales it to fit container
+    // 2. Dimensions
     const width = 1000;
     const height = 400;
     const padding = 50;
@@ -41,7 +40,6 @@ const LargeEquityChart = ({ trades }) => {
     const maxVal = Math.max(...chartData.map(d => d.val));
     const range = (maxVal - minVal) || 1;
     
-    // Add 5% padding to Y axis
     const yMin = minVal - (range * 0.05);
     const yMax = maxVal + (range * 0.05);
     const finalRange = yMax - yMin;
@@ -50,15 +48,13 @@ const LargeEquityChart = ({ trades }) => {
     const getY = (val) => height - padding - ((val - yMin) / finalRange) * (height - padding * 2);
 
     const pathD = chartData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.val)}`).join(' ');
-    const zeroY = getY(1000); // Base capital line
+    const zeroY = getY(1000);
 
-    // Mouse Interaction
     const handleMouseMove = (e) => {
         if (!containerRef.current) return;
         const rect = containerRef.current.getBoundingClientRect();
-        const svgX = (e.clientX - rect.left) / rect.width * width; // Scale mouse to SVG coords
+        const svgX = (e.clientX - rect.left) / rect.width * width;
         
-        // Find closest point
         let closestDist = Infinity;
         let closest = null;
         
@@ -70,7 +66,6 @@ const LargeEquityChart = ({ trades }) => {
                 closest = d;
             }
         });
-
         setHoveredPoint(closest);
     };
 
@@ -86,27 +81,21 @@ const LargeEquityChart = ({ trades }) => {
                 overflow: 'hidden', cursor: 'crosshair'
             }}
         >
-            <div style={{ position: 'absolute', top: 10, left: 15, color: '#888', fontSize: '0.8rem' }}>
-                Growth of $1,000 Capital
-            </div>
+            <div style={{ position: 'absolute', top: 10, left: 15, color: '#888', fontSize: '0.8rem' }}>Growth of $1,000 Capital</div>
             <div style={{ position: 'absolute', top: 10, right: 15, fontWeight: 'bold', color: chartData[chartData.length-1].val >= 1000 ? '#00c853' : '#ff3d00' }}>
                 ${chartData[chartData.length-1].val.toFixed(2)}
             </div>
 
             <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-                {/* Grid Lines */}
                 <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#333" strokeWidth="1" />
                 <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#333" strokeWidth="1" />
                 
-                {/* Base Capital Line ($1000) */}
                 {zeroY >= padding && zeroY <= height - padding && (
                     <line x1={padding} y1={zeroY} x2={width - padding} y2={zeroY} stroke="#555" strokeWidth="1" strokeDasharray="5" />
                 )}
 
-                {/* The Line */}
                 <path d={pathD} fill="none" stroke="#0078d4" strokeWidth="3" vectorEffect="non-scaling-stroke" />
 
-                {/* Gradient Fill (Optional visual candy) */}
                 <defs>
                     <linearGradient id="chartGrad" x1="0" x2="0" y1="0" y2="1">
                         <stop offset="0%" stopColor="#0078d4" stopOpacity="0.2" />
@@ -115,7 +104,6 @@ const LargeEquityChart = ({ trades }) => {
                 </defs>
                 <path d={`${pathD} L ${getX(chartData.length-1)} ${height-padding} L ${padding} ${height-padding} Z`} fill="url(#chartGrad)" stroke="none" />
 
-                {/* Hover Indicator */}
                 {hoveredPoint && (
                     <>
                         <line x1={getX(chartData.indexOf(hoveredPoint))} y1={padding} x2={getX(chartData.indexOf(hoveredPoint))} y2={height - padding} stroke="#fff" strokeWidth="1" strokeDasharray="2" opacity="0.5" />
@@ -124,16 +112,11 @@ const LargeEquityChart = ({ trades }) => {
                 )}
             </svg>
 
-            {/* Hover Tooltip Overlay */}
             {hoveredPoint && (
                 <div style={{
-                    position: 'absolute',
-                    top: '50px',
-                    left: '50%', transform: 'translateX(-50%)',
-                    background: 'rgba(0,0,0,0.8)', border: '1px solid #555',
-                    padding: '8px 12px', borderRadius: '4px',
-                    pointerEvents: 'none', color: '#fff', fontSize: '0.8rem',
-                    textAlign: 'center', zIndex: 10
+                    position: 'absolute', top: '50px', left: '50%', transform: 'translateX(-50%)',
+                    background: 'rgba(0,0,0,0.8)', border: '1px solid #555', padding: '8px 12px', 
+                    borderRadius: '4px', pointerEvents: 'none', color: '#fff', fontSize: '0.8rem', textAlign: 'center', zIndex: 10
                 }}>
                     <div style={{ fontWeight: 'bold' }}>Equity: ${hoveredPoint.val.toFixed(2)}</div>
                     <div style={{ color: '#aaa', fontSize: '0.7rem' }}>{hoveredPoint.date}</div>
@@ -163,7 +146,6 @@ const ForwardTestModal = ({ onClose }) => {
     const [filterForecast, setFilterForecast] = useState('ALL'); 
 
     // --- VIEW MODE ---
-    // false = List View, true = Chart View
     const [showEquity, setShowEquity] = useState(false);
 
     // --- SORTING ---
@@ -239,6 +221,8 @@ const ForwardTestModal = ({ onClose }) => {
             sortableItems.sort((a, b) => {
                 let aValue = a[sortConfig.key];
                 let bValue = b[sortConfig.key];
+                
+                // Mappings
                 if (sortConfig.key === 'trend' || sortConfig.key === 'forecast') {
                     const map = { 'UP': 3, 'FLAT': 2, 'DOWN': 1, '-': 0 };
                     aValue = map[aValue] || 0; bValue = map[bValue] || 0;
@@ -315,7 +299,6 @@ const ForwardTestModal = ({ onClose }) => {
                     </div>
                     
                     <div style={{ display:'flex', gap:'15px' }}>
-                        {/* VIEW TOGGLE */}
                         <button 
                             onClick={() => setShowEquity(!showEquity)}
                             style={{ 
@@ -346,6 +329,19 @@ const ForwardTestModal = ({ onClose }) => {
                     <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}>
                         <option value="ALL">Status: All</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option>
                     </select>
+
+                    {/* NEW: Interval Dropdown (Inserted between Status and Trend) */}
+                    <select 
+                        value={filterInterval || 'ALL'} 
+                        onChange={(e) => setFilterInterval(e.target.value === 'ALL' ? null : e.target.value)} 
+                        style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}
+                    >
+                        <option value="ALL">Interval: All</option>
+                        <option value="15min">15min</option>
+                        <option value="1h">1 Hour</option>
+                        <option value="4h">4 Hours</option>
+                    </select>
+
                     <select value={filterTrend} onChange={(e) => setFilterTrend(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}>
                         <option value="ALL">Trend: All</option><option value="FOLLOW">Trend Follow</option><option value="COUNTER">Counter Trend</option>
                     </select>
@@ -368,13 +364,10 @@ const ForwardTestModal = ({ onClose }) => {
                         <StatCard label="Trades (Closed)" value={displayStats.total_trades} />
                         <StatCard label="Avg Win" value={`$${displayStats.avg_win.toFixed(2)}`} color="#00c853" />
                         <StatCard label="Avg Loss" value={`$${displayStats.avg_loss.toFixed(2)}`} color="#ff3d00" />
-                        {/* Only show Open Trades count if not in Equity View (since Equity view focuses on closed PnL) */}
                         {!showEquity && <StatCard label="Open Trades" value={displayStats.open_trades} color="#29b6f6" />}
                     </div>
 
-                    {/* CONDITIONAL RENDER */}
                     {showEquity ? (
-                        // --- VIEW A: LARGE EQUITY CHART ---
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                             <LargeEquityChart trades={dashboardData.trades} />
                             <div style={{ textAlign: 'center', color: '#666', fontSize: '0.8rem', marginTop: '10px' }}>
@@ -382,16 +375,13 @@ const ForwardTestModal = ({ onClose }) => {
                             </div>
                         </div>
                     ) : (
-                        // --- VIEW B: LIST & DETAILS ---
                         <>
-                            {/* Timeframes */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
                                 {data?.intervals.map(intv => (
                                     <IntervalCard key={intv.interval} intervalData={intv} isActive={filterInterval === intv.interval} onClick={() => setFilterInterval(filterInterval === intv.interval ? null : intv.interval)} />
                                 ))}
                             </div>
 
-                            {/* Table */}
                             <div style={{ flex: 1, overflowX: 'auto', border: '1px solid #444', borderRadius: '6px' }}>
                                 <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', color: '#ddd', fontSize: '0.85rem' }}>
                                     <thead style={{ background: '#252525' }}>
