@@ -326,6 +326,7 @@ def scan_market():
     scanner_results = []
     
     # Calculate Max Allowed Delay (Interval + 20 mins buffer)
+    # Keeping variables for logging or future use, but logic is disabled below.
     interval_mins = get_interval_minutes(interval)
     max_delay_seconds = (interval_mins * 60) + (20 * 60) 
     now_utc = datetime.utcnow()
@@ -338,22 +339,9 @@ def scan_market():
         if not ohlc_data or len(ohlc_data) < 60:
             continue
 
-        # --- NEW: STALENESS CHECK ---
-        # Check if the last candle is too old (Market Closed or Data Issue)
-        last_candle = ohlc_data[-1]
-        
-        # Handle both Int timestamp and Datetime object
-        if 'datetime_obj' in last_candle and last_candle['datetime_obj']:
-            last_time = last_candle['datetime_obj']
-        else:
-            last_time = datetime.utcfromtimestamp(last_candle['time'])
-            
-        # If data is older than (Interval + 20mins), ignore it.
-        # This prevents "Ghost Signals" on weekends for Stocks/Forex.
-        if (now_utc - last_time).total_seconds() > max_delay_seconds:
-            # Skip this asset because data is stale
-            continue
-        # ----------------------------
+        # --- STALENESS CHECK REMOVED FOR SCANNER ---
+        # We want to see the last market state even if the market is closed (Stocks/Forex on Weekends)
+        # -------------------------------------------
 
         # 2. Prepare Data
         df = pd.DataFrame(ohlc_data)
@@ -618,8 +606,7 @@ def analyze_asset():
 @jwt_required()
 def get_forward_results():
     # Fetch all trades ordered by time desc
-    #trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).limit(200).all()
-    trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).all()
+    trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).limit(200).all()
     
     # Pre-fetch latest prices for active symbols to avoid N+1 queries
     # We only need this for OPEN trades
