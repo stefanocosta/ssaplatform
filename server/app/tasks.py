@@ -43,7 +43,7 @@ def update_market_data():
     """
     1. Check Time & Determine Forward Test Triggers (IMMEDIATELY).
     2. Batch fetch 1min data.
-    3. Aggregate to higher timeframes.
+    3. Aggregate to higher timeframes (including Weekly from Daily).
     4. Execute Forward Testing if triggered.
     """
     # 1. CAPTURE TIME AT START
@@ -70,7 +70,7 @@ def update_market_data():
     asset_chunks = [TRACKED_ASSETS[i:i + chunk_size] for i in range(0, len(TRACKED_ASSETS), chunk_size)]
 
     for chunk in asset_chunks:
-        # --- FIX 1: Filter out closed assets (Weekend Saver) ---
+        # Filter out closed assets
         active_chunk = [s for s in chunk if is_asset_trading(s)]
         
         if not active_chunk:
@@ -119,8 +119,14 @@ def update_market_data():
                             "volume": volume_val
                         })
                     
+                    # A. Save 1min
                     save_to_db(sym, '1min', clean_values)
+                    
+                    # B. Build 5m, 15m, 1h, 4h, 1D from 1min
                     resample_and_save(sym)
+                    
+                    # C. Build 1W from 1D (NEW)
+                    resample_weekly(sym)
                 
                 elif isinstance(data, dict) and 'code' in data:
                         print(f"⚠️ Error for symbol {sym}: {data.get('message')}")
@@ -148,7 +154,11 @@ def update_market_data():
     print("✅ [Daemon] Cycle Complete.")
 
 def resample_and_save(symbol):
+    """
+    Aggregates 1min data into 5m, 15m, 30m, 1h, 4h AND 1DAY.
+    """
     try:
+        # Use last 24h of 1min data
         since = datetime.utcnow() - pd.Timedelta(hours=24)
         stmt = db.select(MarketData).filter(
             MarketData.symbol == symbol,
@@ -166,7 +176,14 @@ def resample_and_save(symbol):
         df = pd.DataFrame(data_list)
         df.set_index('time', inplace=True)
 
-        aggregations = {'5min': '5min', '15min': '15min', '30min': '30min', '1h': '1h', '4h': '4h'}
+        aggregations = {
+            '5min': '5min', 
+            '15min': '15min', 
+            '30min': '30min', 
+            '1h': '1h', 
+            '4h': '4h',
+            '1day': '1D' 
+        }
 
         for interval_name, pandas_rule in aggregations.items():
             ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
@@ -182,3 +199,43 @@ def resample_and_save(symbol):
             save_to_db(symbol, interval_name, to_save)
     except Exception as e:
         print(f"❌ Resample Error ({symbol}): {e}")
+
+def resample_weekly(symbol):
+    """
+    Aggregates 1day data into 1week.
+    """
+    try:
+        # Fetch last 60 days of DAILY data (enough to cover > 8 weeks)
+        since = datetime.utcnow() - pd.Timedelta(days=60)
+        stmt = db.select(MarketData).filter(
+            MarketData.symbol == symbol,
+            MarketData.interval == '1day',
+            MarketData.time >= since
+        ).order_by(MarketData.time.asc())
+
+        results = db.session.execute(stmt).scalars().all()
+        if not results: return
+
+        data_list = [{
+            'time': r.time, 'open': r.open, 'high': r.high, 'low': r.low, 'close': r.close, 'volume': r.volume
+        } for r in results]
+
+        df = pd.DataFrame(data_list)
+        df.set_index('time', inplace=True)
+
+        # 'W-MON' ensures weeks start on Monday, matching most financial charts
+        ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+        resampled = df.resample('W-MON', closed='left', label='left').agg(ohlc_dict).dropna()
+
+        to_save = []
+        # Update last 2 weeks (Current live week + potentially previous closed week if we missed it)
+        for time_idx, row in resampled.tail(2).iterrows(): 
+             to_save.append({
+                "datetime_obj": time_idx.replace(tzinfo=timezone.utc),
+                "open": float(row['open']), "high": float(row['high']), "low": float(row['low']),
+                "close": float(row['close']), "volume": float(row['volume'])
+            })
+        
+        save_to_db(symbol, '1week', to_save)
+    except Exception as e:
+        print(f"❌ Weekly Resample Error ({symbol}): {e}")
