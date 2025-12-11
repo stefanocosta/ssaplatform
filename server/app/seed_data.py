@@ -18,7 +18,7 @@ app = create_app()
 def seed_database():
     with app.app_context():
         api_key = app.config['TWELVE_DATA_API_KEY']
-        DELAY_PER_ASSET = 6 
+        DELAY_PER_ASSET = 8 # Increased slightly to avoid rate limits with larger payloads
 
         print(f"🌱 Starting Full Database Seed for {len(TRACKED_ASSETS)} assets...")
         print("---------------------------------------------------")
@@ -26,13 +26,14 @@ def seed_database():
         for index, symbol in enumerate(TRACKED_ASSETS):
             print(f"[{index+1}/{len(TRACKED_ASSETS)}] Processing {symbol}...")
 
-            fetch_and_save(symbol, '1month', api_key, outputsize=300)
-            fetch_and_save(symbol, '1week', api_key, outputsize=300) 
-            fetch_and_save(symbol, '1day', api_key, outputsize=1000) 
-            fetch_and_save(symbol, '4h', api_key, outputsize=500)
-            fetch_and_save(symbol, '1h', api_key, outputsize=500)
-            fetch_and_save(symbol, '30min', api_key, outputsize=500) 
-            fetch_and_save(symbol, '1min', api_key, outputsize=5000)
+            # --- INCREASED OUTPUT SIZES FOR BACKTESTING ---
+            fetch_and_save(symbol, '1month', api_key, outputsize=500)
+            fetch_and_save(symbol, '1week', api_key, outputsize=1000) 
+            fetch_and_save(symbol, '1day', api_key, outputsize=3000) # Deep history for Daily
+            fetch_and_save(symbol, '4h', api_key, outputsize=3000)   # Deep history for 4h
+            fetch_and_save(symbol, '1h', api_key, outputsize=3000)   # Deep history for 1h
+            fetch_and_save(symbol, '30min', api_key, outputsize=3000) 
+            fetch_and_save(symbol, '1min', api_key, outputsize=5000) # Max standard limit
 
             print(f"   ↳ Generating 5m & 15m aggregates locally...")
             resample_specific_intervals(symbol)
@@ -119,7 +120,7 @@ def resample_specific_intervals(symbol):
         to_save = []
         for time_idx, row in resampled.iterrows():
              to_save.append({
-                "datetime_obj": time_idx, # Pandas uses Naive by default, perfect.
+                "datetime_obj": time_idx,
                 "open": float(row['open']),
                 "high": float(row['high']),
                 "low": float(row['low']),
