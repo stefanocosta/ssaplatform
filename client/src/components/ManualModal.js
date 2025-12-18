@@ -29,7 +29,7 @@ const ManualModal = ({ onClose }) => {
                             Markets move in waves. The <strong>Cyclic Component</strong> isolates these oscillations from the trend.
                         </p>
                         <p>
-                            <strong>Visualizing the Data:</strong> The dotted line on the main chart is the Cycle superimposed on the Trend. The bottom panel shows the <em>same</em> Cycle but "Detrended" (flattened against a zero line). The Zero Line in the bottom panel represents the Trend itself.
+                            <strong>Visualizing the Data:</strong> The dotted line on the main chart is the Cycle superimposed on the Trend. The bottom panel shows the <em>same</em> Cycle but "Detrended" (flattened against a zero line).
                         </p>
                         <ul>
                             <li><strong>Below Zero (<span style={{color: '#00c853'}}>Green</span>/<span style={{color: '#b2ff59'}}>Lime</span>):</strong> Price is below the Trend (Potential value area).</li>
@@ -38,113 +38,90 @@ const ManualModal = ({ onClose }) => {
                     </section>
 
                     <section>
-                        <h3>3. Mathematical "Hotspots" (Oversold/Overbought)</h3>
+                        <h3>3. Mathematical "Hotspots"</h3>
                         <p>
-                            Hotspots are not random; they are mathematical areas where Price, Cycle, and Trend diverge significantly, indicating exhaustion.
+                            Hotspots are not random; they are mathematical areas where Price, Cycle, and Trend diverge significantly.
+                        </p>
+                        <ul>
+                            <li><strong style={{color: '#00c853'}}>Green Hotspot:</strong> Strong buy zone in a rising trend (Oversold).</li>
+                            <li><strong style={{color: '#ff3d00'}}>Red Hotspot:</strong> High probability Short entry (Overbought).</li>
+                            <li><strong style={{color: '#ffab00'}}>Orange/Lime:</strong> Counter-trend or Take-Profit zones.</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h3>4. Dual Strategy Engines</h3>
+                        <p>
+                            The platform now includes two distinct algorithmic engines. You can toggle between them in the main control bar, Scanner, or Test suite.
                         </p>
                         <div className="manual-grid">
                             <div>
-                                <h4>Buying Zones (Oversold)</h4>
-                                <ul>
-                                    <li><strong>Condition:</strong> Price &lt; Cyclic &lt; Trend.</li>
-                                    <li><strong style={{color: '#00c853'}}>Green Hotspot:</strong> Strong buy zone in a rising trend.</li>
-                                    <li><strong style={{color: '#b2ff59'}}>Lime Hotspot:</strong> Counter-trend buy zone.</li>
-                                </ul>
+                                <h4>BASIC (Mean Reversion)</h4>
+                                <p style={{fontSize:'0.85rem'}}>
+                                    Best for Swing Trading. It waits for Price to deviate significantly from the Trend (Hotspot) and triggers when the Cycle confirms a return to value.
+                                    <br/><strong>Focus:</strong> High probability, lower frequency.
+                                </p>
                             </div>
                             <div>
-                                <h4>Selling Zones (Overbought)</h4>
-                                <ul>
-                                    <li><strong>Condition:</strong> Price &gt; Cyclic &gt; Trend.</li>
-                                    <li><strong style={{color: '#ff3d00'}}>Red Hotspot:</strong> Trend is Falling. High probability Short entry.</li>
-                                    <li><strong style={{color: '#ffab00'}}>Orange Hotspot:</strong> Trend is Rising. Indicates "Take Profit" rather than a direct Short.</li>
-                                </ul>
+                                <h4>FAST (Momentum & Scalp)</h4>
+                                <p style={{fontSize:'0.85rem'}}>
+                                    Best for Volatile Assets. It analyzes the derivative (rate of change) of the "Noise" component to detect 5-bar exhaustion patterns or rapid zero-line reversals.
+                                    <br/><strong>Focus:</strong> Quick reaction, higher frequency.
+                                </p>
                             </div>
                         </div>
                     </section>
 
                     <section>
-                        <h3>4. Pinpoint Signals</h3>
+                        <h3>5. The Market Scanner</h3>
                         <p>
-                            The "S" (Signal) markers are the culmination of our algorithm. They generate a signal only when:
-                        </p>
-                        <ol>
-                            <li>Price enters a mathematical <strong>Hotspot</strong>.</li>
-                            <li>The <strong>Cyclic</strong> component reaches an extreme.</li>
-                            <li>The <strong>Fast Cyclic (Noise)</strong> confirms a reversal trigger.</li>
-                        </ol>
-                        <p>This filters out premature entries, providing pinpoint precision for Low Risk / High Reward setups.</p>
-                    </section>
-
-                    <section>
-                        <h3>5. The Forecast & Adaptability</h3>
-                        <p>
-                            <strong>The Forecast:</strong> Using a proprietary algorithm combining SSA decomposition with Fast Fourier Transform (FFT) forward projection, we mathematically project the likely path of the Trend and Cycle.
-                        </p>
-                        <p>
-                            <strong>Unique Adaptability:</strong> The SSA Trading Platform is <em>Adaptive</em>. It recalculates the math with every new data point. You may notice recent signals shifting slightly as the market evolves. <br/>
-                            <em>This is not a defect; it is a feature.</em> It provides you with the most accurate mathematical representation of the market's <strong>current</strong> intent, rather than locking in a past calculation that is no longer valid.
-                        </p>
-                    </section>
-
-                    {/* --- UPDATED SECTION 6 --- */}
-                    <section>
-                        <h3>6. The Market Scanner</h3>
-                        <p>
-                            The Scanner automates the search for opportunities. Instead of manually checking every asset, the Scanner analyzes the entire asset list in seconds.
+                            The Scanner automates the search for opportunities based on your <strong>Selected Strategy</strong> (Basic or Fast).
                         </p>
                         <ul>
-                            <li><strong>Trend (TRND):</strong> Indicates the current slope of the Zero-Lag Trend. 
-                                (<span style={{color: '#00c853'}}>Up Arrow</span> = Bullish, <span style={{color: '#ff3d00'}}>Down Arrow</span> = Bearish).
-                            </li>
-                            <li>
-                                <strong>Cycle % & Fast %:</strong> These percentages show the component's position relative to its historical range.
-                                <ul>
-                                    <li><span style={{color: '#00c853'}}><strong>Green (&lt; 20%):</strong></span> Bottoming out (Oversold).</li>
-                                    <li><span style={{color: '#ff3d00'}}><strong>Red (&gt; 80%):</strong></span> Topping out (Overbought).</li>
-                                </ul>
-                            </li>
-                            {/* NEW FEATURE EXPLANATION */}
-                            <li>
-                                <strong>Forecast (FCST):</strong> Our predictive engine projects the next 20 bars into the future.
-                                <ul>
-                                    <li><span style={{color: '#00c853'}}>Up Arrow</span>: The model predicts price/cycle will be higher in the future.</li>
-                                    <li><span style={{color: '#ff3d00'}}>Down Arrow</span>: The model predicts price/cycle will be lower in the future.</li>
-                                </ul>
-                            </li>
-                            <li><strong>Signal Column:</strong> Only appears if a valid "Pinpoint Signal" is detected right now.</li>
+                            <li><strong>Trend & Forecast:</strong> Instant direction arrows based on SSA projection.</li>
+                            <li><strong>Cycle %:</strong> Shows how "stretched" the current price is (0% = Bottom, 100% = Top).</li>
+                            <li><strong>New Signals Only:</strong> Use the filter checkbox to see only assets triggering an entry <em>right now</em>.</li>
                         </ul>
                     </section>
 
                     <section>
-                        <h3>7. Deep Analysis Tool</h3>
+                        <h3>6. Deep Analysis & Multi-Timeframe</h3>
                         <p>
-                            The <strong>Analysis</strong> button (next to Scan) performs a real-time historical check on the currently viewed asset to provide context beyond the current candle.
+                            Clicking "DA" performs a comprehensive health check on the asset.
                         </p>
                         <ul>
-                            <li><strong>Trade Status:</strong> Checks the last 60 bars to identify if there is an active "LONG" or "SHORT" signal currently in play.</li>
-                            <li><strong>Signal Age:</strong> Displays exactly how many bars ago the signal was triggered, helping you distinguish between fresh entries and mature trends.</li>
-                            <li><strong>Smart Recommendations:</strong> The engine generates text advice based on the interaction of components:
-                                <ul>
-                                    <li>It identifies if a trade is <strong>Trend-Following</strong> (Safe) or <strong>Counter-Trend</strong> (Risky).</li>
-                                    <li><strong>Profit Taking:</strong> It monitors the <strong>Fast Cycle</strong>. If you are in a Long position and the Fast Cycle hits &gt;80% (Overbought), it suggests taking profits even if the main trend is still up.</li>
-                                </ul>
-                            </li>
+                            <li><strong>Multi-Timeframe Context:</strong> The new "Context Ribbon" instantly shows the Trade Status and Cycle direction of higher timeframes (e.g., viewing 1H shows 4H and Daily context).</li>
+                            <li><strong>Smart Recommendations:</strong> The engine generates text advice, warning you if a trade is Counter-Trend or if the Fast Cycle suggests profit-taking.</li>
+                            <li><strong>Deep Wave Lab:</strong> A dedicated environment to visualize the raw harmonic waves and synchronization bands.</li>
                         </ul>
                     </section>
 
+                    {/* --- UPDATED SECTION 7 --- */}
                     <section>
-                        <h3>8. Controls & Timeframes</h3>
+                        <h3>7. Real-Time Forward Testing</h3>
+                        <p>
+                            We do not rely on standard backtests. This is a <strong>Real-Time Simulation</strong> designed to provide the most sincere validation of the trading strategies.
+                        </p>
+                        <p>
+                            Unlike standard backtests which can be curve-fitted to past data, this system acts as a <strong>Live Trading Bot</strong>:
+                        </p>
                         <ul>
-                            <li><strong>Auto Checkbox:</strong> When enabled, the platform connects to our server to pull 1-minute updates, refreshing the calculations in real-time.</li>
-                            <li><strong>Investors:</strong> Focus on <strong>Weekly</strong> and <strong>Daily</strong> charts for macro-cycle positioning.</li>
-                            <li><strong>Traders:</strong> Use <strong>4H</strong> and <strong>1H</strong> for swing trading, or lower timeframes for precision intraday entries.</li>
+                            <li>It monitors the portfolio 24/7 across multiple timeframes (15m, 1h, 4h).</li>
+                            <li>It executes a trade immediately whenever the <strong>Trend, Cycle, and Fast Wave</strong> components align to trigger a signal.</li>
+                            <li>It tracks the trade until the signal reverses, exactly as a human trader would be instructed to do.</li>
                         </ul>
+                        <p>
+                            <strong>Why this matters:</strong> This builds a track record "forward" in time. What you see here is exactly how the algorithm performs in live market conditions, with no hindsight bias.
+                        </p>
                     </section>
 
                     <section style={{marginTop: '30px', borderTop: '1px solid #444', paddingTop: '20px', opacity: 0.8}}>
-                        <h3>9. Risk Disclosure & Disclaimer</h3>
+                        <h3>8. Risk Disclosure</h3>
                         <p style={{fontSize: '0.85rem', lineHeight: '1.4'}}>
-                            The SSA Trading Platform is an advanced analytical tool designed to identify potential mathematical entry and exit zones based on historical data analysis. It does not constitute financial, investment, or trading advice. Trading in financial markets involves a substantial risk of loss and is not suitable for every investor. All analysis, chart patterns, and signals provided are for educational and informational purposes only. Past performance is no guarantee of future results. Users are solely responsible for their own trading decisions.
+                            The SSA Trading Platform is an advanced analytical tool designed to identify potential mathematical entry and exit zones based on historical data analysis. 
+                            It does not constitute financial, investment, or trading advice. Trading in financial markets involves a substantial risk of loss and 
+                            is not suitable for every investor. All analysis, chart patterns, and signals provided are for educational and informational purposes only. 
+                            Past performance is no guarantee of future results. Users are solely responsible for their own trading decisions.
                         </p>
                     </section>
                 </div>
