@@ -37,30 +37,44 @@ const HelpPopup = ({ onClose }) => (
     </div>
 );
 
-// --- SYSTEM MONITOR COMPONENT ---
-const SystemMonitor = ({ trades }) => {
+// --- SYSTEM MONITOR COMPONENT (Compact Version) ---
+const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added strategy prop
     const [now, setNow] = useState(new Date());
     const [startTime, setStartTime] = useState(null);
 
+    // 1. Determine Start Time based on selected strategy
     useEffect(() => {
         if (trades && trades.length > 0) {
-            const sorted = [...trades].sort((a, b) => new Date(a.entry_date) - new Date(b.entry_date));
-            const firstDate = new Date(sorted[0].entry_date);
-            setStartTime(firstDate);
-        }
-    }, [trades]);
+            // FIX: Filter trades by the current strategy first
+            const strategyTrades = trades.filter(t => {
+                const tStrat = t.strategy ? t.strategy.toUpperCase() : 'BASIC';
+                return tStrat === strategy;
+            });
 
+            if (strategyTrades.length > 0) {
+                const sorted = strategyTrades.sort((a, b) => new Date(a.entry_date) - new Date(b.entry_date));
+                const firstDate = new Date(sorted[0].entry_date);
+                setStartTime(firstDate);
+            } else {
+                setStartTime(null); // No trades for this strategy yet
+            }
+        }
+    }, [trades, strategy]);
+
+    // 2. Tick every second
     useEffect(() => {
         const interval = setInterval(() => setNow(new Date()), 1000);
         return () => clearInterval(interval);
     }, []);
 
+    // 3. Format Duration
     const getRunningDuration = () => {
-        if (!startTime) return "--d --h --m";
+        if (!startTime) return isMobile ? "--d --h" : "--d --h --m";
         const diff = Math.floor((now - startTime) / 1000); 
         const d = Math.floor(diff / (3600 * 24));
         const h = Math.floor((diff % (3600 * 24)) / 3600);
         const m = Math.floor((diff % 3600) / 60);
+        if (isMobile) return `${d}d ${h}h`; 
         const s = diff % 60;
         return `${d}d ${h}h ${m}m ${s}s`;
     };
@@ -81,32 +95,46 @@ const SystemMonitor = ({ trades }) => {
             totalMins = (hourDiff * 60) + (59 - minutes);
         }
 
-        return `${totalMins}m ${diffSecs}s`;
+        return `${totalMins}m`;
     };
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginLeft: '20px', borderLeft: '1px solid #444', paddingLeft: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ 
+            display: 'flex', alignItems: 'center', 
+            gap: isMobile ? '8px' : '20px', 
+            marginLeft: isMobile ? '0' : '20px', 
+            borderLeft: isMobile ? 'none' : '1px solid #444', 
+            paddingLeft: isMobile ? '0' : '20px', 
+            flexWrap: 'nowrap', 
+            fontSize: isMobile ? '0.65rem' : '0.75rem',
+            overflow: 'hidden'
+        }}>
+            {/* STATUS PULSE */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div style={{ position: 'relative', width: '8px', height: '8px' }}>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%' }}></div>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%', animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }}></div>
                 </div>
-                <div style={{ color: '#00e676', fontWeight: 'bold', fontSize: '0.7rem', letterSpacing: '1px' }}>RUNNING</div>
+                {!isMobile && <div style={{ color: '#00e676', fontWeight: 'bold', fontSize: '0.7rem', letterSpacing: '1px' }}>RUNNING</div>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Clock size={14} color="#666" />
-                <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>
+
+            {/* RUNNING TIME */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                <Clock size={isMobile ? 12 : 14} color="#666" />
+                <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>
                     {getRunningDuration()}
                 </div>
             </div>
-            <div style={{ display: 'flex', gap: '15px', fontSize: '0.7rem', color: '#888', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <div style={{display:'flex', alignItems:'center', gap:'4px'}}>
+
+            {/* NEXT UPDATES */}
+            <div style={{ display: 'flex', gap: isMobile ? '8px' : '15px', color: '#888', whiteSpace: 'nowrap' }}>
+                <div style={{display:'flex', alignItems:'center', gap:'2px'}}>
                     <span>15m:</span><span style={{color: '#ff9800', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(15)}</span>
                 </div>
-                <div style={{display:'flex', alignItems:'center', gap:'4px'}}>
+                <div style={{display:'flex', alignItems:'center', gap:'2px'}}>
                     <span>1h:</span><span style={{color: '#29b6f6', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(60)}</span>
                 </div>
-                <div style={{display:'flex', alignItems:'center', gap:'4px'}}>
+                <div style={{display:'flex', alignItems:'center', gap:'2px'}}>
                     <span>4h:</span><span style={{color: '#e040fb', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(240)}</span>
                 </div>
             </div>
@@ -115,7 +143,7 @@ const SystemMonitor = ({ trades }) => {
     );
 };
 
-// --- EQUITY CHART ---
+// --- EQUITY CHART (Reused) ---
 const LargeEquityChart = ({ trades }) => {
     const [hoveredPoint, setHoveredPoint] = useState(null);
     const containerRef = useRef(null);
@@ -487,7 +515,8 @@ const TestModal = ({ onClose }) => {
                     {/* CENTER: SYSTEM MONITOR (Integrated here) */}
                     {mode === 'forward' && data?.trades && (
                          <div style={{flex: 1, display: 'flex', justifyContent: 'center'}}>
-                             <SystemMonitor trades={data.trades} isMobile={isMobile} />
+                             {/* UPDATED: Pass strategy to filter time */}
+                             <SystemMonitor trades={data.trades} isMobile={isMobile} strategy={filterStrategy} />
                          </div>
                     )}
 
@@ -550,7 +579,7 @@ const TestModal = ({ onClose }) => {
                 {/* MAIN CONTENT AREA */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column' }}>
                     
-                    {!data && loading && <div style={{textAlign:'center', marginTop:'50px', color:'#888'}}>Loading data... This may take a moment.</div>}
+                    {!data && loading && <div style={{textAlign:'center', marginTop:'50px', color:'#888'}}>Running simulation... This may take a moment.</div>}
                     {!data && !loading && mode === 'backtest' && <div style={{textAlign:'center', marginTop:'50px', color:'#666'}}>Configure settings and click RUN TEST</div>}
                     
                     {data && (
