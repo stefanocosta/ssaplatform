@@ -550,7 +550,7 @@ const TestModal = ({ onClose }) => {
                 {/* MAIN CONTENT AREA */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column' }}>
                     
-                    {!data && loading && <div style={{textAlign:'center', marginTop:'50px', color:'#888'}}>Running simulation... This may take a moment.</div>}
+                    {!data && loading && <div style={{textAlign:'center', marginTop:'50px', color:'#888'}}>Loading data... This may take a moment.</div>}
                     {!data && !loading && mode === 'backtest' && <div style={{textAlign:'center', marginTop:'50px', color:'#666'}}>Configure settings and click RUN TEST</div>}
                     
                     {data && (
