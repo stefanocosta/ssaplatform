@@ -37,15 +37,13 @@ const HelpPopup = ({ onClose }) => (
     </div>
 );
 
-// --- SYSTEM MONITOR COMPONENT (Compact Version) ---
-const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added strategy prop
+// --- SYSTEM MONITOR COMPONENT ---
+const SystemMonitor = ({ trades, isMobile, strategy }) => {
     const [now, setNow] = useState(new Date());
     const [startTime, setStartTime] = useState(null);
 
-    // 1. Determine Start Time based on selected strategy
     useEffect(() => {
         if (trades && trades.length > 0) {
-            // FIX: Filter trades by the current strategy first
             const strategyTrades = trades.filter(t => {
                 const tStrat = t.strategy ? t.strategy.toUpperCase() : 'BASIC';
                 return tStrat === strategy;
@@ -56,18 +54,16 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added st
                 const firstDate = new Date(sorted[0].entry_date);
                 setStartTime(firstDate);
             } else {
-                setStartTime(null); // No trades for this strategy yet
+                setStartTime(null);
             }
         }
     }, [trades, strategy]);
 
-    // 2. Tick every second
     useEffect(() => {
         const interval = setInterval(() => setNow(new Date()), 1000);
         return () => clearInterval(interval);
     }, []);
 
-    // 3. Format Duration
     const getRunningDuration = () => {
         if (!startTime) return isMobile ? "--d --h" : "--d --h --m";
         const diff = Math.floor((now - startTime) / 1000); 
@@ -83,7 +79,6 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added st
         const minutes = now.getMinutes();
         const next = Math.ceil((minutes + 1) / intervalMinutes) * intervalMinutes;
         const diffMins = next - minutes - 1; 
-        const diffSecs = 59 - now.getSeconds();
         
         let totalMins = diffMins;
         if (intervalMinutes === 60) totalMins = 59 - minutes;
@@ -94,7 +89,6 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added st
             if (hourDiff < 0) hourDiff += 24;
             totalMins = (hourDiff * 60) + (59 - minutes);
         }
-
         return `${totalMins}m`;
     };
 
@@ -109,7 +103,6 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added st
             fontSize: isMobile ? '0.65rem' : '0.75rem',
             overflow: 'hidden'
         }}>
-            {/* STATUS PULSE */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div style={{ position: 'relative', width: '8px', height: '8px' }}>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%' }}></div>
@@ -118,7 +111,6 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added st
                 {!isMobile && <div style={{ color: '#00e676', fontWeight: 'bold', fontSize: '0.7rem', letterSpacing: '1px' }}>RUNNING</div>}
             </div>
 
-            {/* RUNNING TIME */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                 <Clock size={isMobile ? 12 : 14} color="#666" />
                 <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>
@@ -126,17 +118,10 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => { // UPDATED: Added st
                 </div>
             </div>
 
-            {/* NEXT UPDATES */}
             <div style={{ display: 'flex', gap: isMobile ? '8px' : '15px', color: '#888', whiteSpace: 'nowrap' }}>
-                <div style={{display:'flex', alignItems:'center', gap:'2px'}}>
-                    <span>15m:</span><span style={{color: '#ff9800', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(15)}</span>
-                </div>
-                <div style={{display:'flex', alignItems:'center', gap:'2px'}}>
-                    <span>1h:</span><span style={{color: '#29b6f6', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(60)}</span>
-                </div>
-                <div style={{display:'flex', alignItems:'center', gap:'2px'}}>
-                    <span>4h:</span><span style={{color: '#e040fb', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(240)}</span>
-                </div>
+                <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>15m:</span><span style={{color: '#ff9800', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(15)}</span></div>
+                <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>1h:</span><span style={{color: '#29b6f6', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(60)}</span></div>
+                <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>4h:</span><span style={{color: '#e040fb', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(240)}</span></div>
             </div>
             <style>{`@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }`}</style>
         </div>
@@ -192,7 +177,9 @@ const PerformersView = ({ data }) => {
         if (!data || !data.trades) return {};
         const groups = {};
         data.trades.forEach(t => {
+            // FIX: Only count CLOSED trades
             if (t.status !== 'CLOSED') return;
+            
             if (!groups[t.interval]) groups[t.interval] = {};
             if (!groups[t.interval][t.symbol]) groups[t.interval][t.symbol] = { symbol: t.symbol, pnl: 0, wins: 0, losses: 0, total: 0 };
             const g = groups[t.interval][t.symbol]; const pnl = t.pnl || 0; g.pnl += pnl; g.total++;
@@ -429,7 +416,7 @@ const TestModal = ({ onClose }) => {
     
     const renderContent = () => {
         if (showPerformers) {
-            return <PerformersView data={data} />;
+            return <PerformersView data={dashboardData} />; // <--- FIX APPLIED HERE
         }
         if (showEquity) {
             return <LargeEquityChart trades={dashboardData.trades} />;
@@ -467,7 +454,6 @@ const TestModal = ({ onClose }) => {
                                 {mode === 'forward' && <td style={{fontWeight:'bold', color:getDirColor(t.forecast)}}>{t.forecast}</td>}
                                 {mode === 'forward' && <td style={{color:t.status==='OPEN'?'#29b6f6':'#888'}}>{t.status}</td>}
                                 
-                                {/* FIX 2: 4 decimal places for Prices */}
                                 <td>{t.entry_price.toFixed(4)}</td>
                                 <td style={{fontSize:'0.8rem', color:'#aaa'}}>{t.entry_date}</td>
                                 <td style={{fontSize:'0.8rem', color:'#aaa'}}>{t.exit_date}</td>
@@ -544,7 +530,7 @@ const TestModal = ({ onClose }) => {
                             </div>
                             <button onClick={() => setShowFilterAssetMenu(!showFilterAssetMenu)} style={{ background: selectedAssets.size > 0 ? '#0078d4' : '#333', border: '1px solid #555', borderRadius: '4px', color: 'white', padding: '0 8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronDown size={14} /></button>
                             {showFilterAssetMenu && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, width: '450px', maxWidth: '85vw', maxHeight: '400px', overflowY: 'auto', overflowX: 'auto', background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(110px, 1fr))', gap: '15px' }}>
+                                <div style={{ position: 'absolute', top: '100%', left: 0, width: '450px', maxHeight: '400px', overflowY: 'auto', overflowX: 'auto', background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(110px, 1fr))', gap: '15px' }}>
                                     {Object.entries(ASSET_CATEGORIES).map(([category, assets]) => {
                                         const allSelected = assets.every(a => selectedAssets.has(a));
                                         return (
