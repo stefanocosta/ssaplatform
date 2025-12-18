@@ -79,7 +79,7 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
         const minutes = now.getMinutes();
         const next = Math.ceil((minutes + 1) / intervalMinutes) * intervalMinutes;
         const diffMins = next - minutes - 1; 
-        
+        const diffSecs = 59 - now.getSeconds();
         let totalMins = diffMins;
         if (intervalMinutes === 60) totalMins = 59 - minutes;
         if (intervalMinutes === 240) { 
@@ -93,16 +93,7 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
     };
 
     return (
-        <div style={{ 
-            display: 'flex', alignItems: 'center', 
-            gap: isMobile ? '8px' : '20px', 
-            marginLeft: isMobile ? '0' : '20px', 
-            borderLeft: isMobile ? 'none' : '1px solid #444', 
-            paddingLeft: isMobile ? '0' : '20px', 
-            flexWrap: 'nowrap', 
-            fontSize: isMobile ? '0.65rem' : '0.75rem',
-            overflow: 'hidden'
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '20px', marginLeft: isMobile ? '0' : '20px', borderLeft: isMobile ? 'none' : '1px solid #444', paddingLeft: isMobile ? '0' : '20px', flexWrap: 'nowrap', fontSize: isMobile ? '0.65rem' : '0.75rem', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div style={{ position: 'relative', width: '8px', height: '8px' }}>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%' }}></div>
@@ -110,14 +101,10 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
                 </div>
                 {!isMobile && <div style={{ color: '#00e676', fontWeight: 'bold', fontSize: '0.7rem', letterSpacing: '1px' }}>RUNNING</div>}
             </div>
-
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                 <Clock size={isMobile ? 12 : 14} color="#666" />
-                <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>
-                    {getRunningDuration()}
-                </div>
+                <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>{getRunningDuration()}</div>
             </div>
-
             <div style={{ display: 'flex', gap: isMobile ? '8px' : '15px', color: '#888', whiteSpace: 'nowrap' }}>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>15m:</span><span style={{color: '#ff9800', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(15)}</span></div>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>1h:</span><span style={{color: '#29b6f6', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(60)}</span></div>
@@ -128,7 +115,7 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
     );
 };
 
-// --- EQUITY CHART (Reused) ---
+// --- EQUITY CHART ---
 const LargeEquityChart = ({ trades }) => {
     const [hoveredPoint, setHoveredPoint] = useState(null);
     const containerRef = useRef(null);
@@ -177,9 +164,7 @@ const PerformersView = ({ data }) => {
         if (!data || !data.trades) return {};
         const groups = {};
         data.trades.forEach(t => {
-            // FIX: Only count CLOSED trades
             if (t.status !== 'CLOSED') return;
-            
             if (!groups[t.interval]) groups[t.interval] = {};
             if (!groups[t.interval][t.symbol]) groups[t.interval][t.symbol] = { symbol: t.symbol, pnl: 0, wins: 0, losses: 0, total: 0 };
             const g = groups[t.interval][t.symbol]; const pnl = t.pnl || 0; g.pnl += pnl; g.total++;
@@ -381,6 +366,64 @@ const TestModal = ({ onClose }) => {
         };
     }, [data, mode, filterStrategy, filterInterval, filterStatus, filterDirection, filterAsset, selectedAssets, filterTrend, filterForecast]);
 
+    // --- RECALCULATE INTERVAL STATS DYNAMICALLY ---
+    // [FIX] Generates interval stats based on the *filtered strategy* trades, ignoring the interval filter itself.
+    const intervalStats = useMemo(() => {
+        if (!data?.trades) return [];
+
+        const stats = {
+            '15min': { pnl: 0, wins: 0, closed: 0, open: 0 },
+            '1h': { pnl: 0, wins: 0, closed: 0, open: 0 },
+            '4h': { pnl: 0, wins: 0, closed: 0, open: 0 }
+        };
+
+        // Filter: Apply all filters EXCEPT Interval, because we want to show all intervals side-by-side
+        const cardTrades = data.trades.filter(t => {
+            const tradeStrat = t.strategy ? t.strategy.toUpperCase() : 'BASIC';
+            if (tradeStrat !== filterStrategy) return false;
+
+            if (filterStatus !== 'ALL' && t.status !== filterStatus) return false;
+            if (filterDirection !== 'ALL' && t.direction !== filterDirection) return false;
+            if (selectedAssets.size > 0) { if (!selectedAssets.has(t.symbol)) return false; } 
+            else if (filterAsset && !t.symbol.includes(filterAsset.toUpperCase())) return false;
+            
+            if (filterTrend !== 'ALL') {
+                const isFollow = (t.direction === 'LONG' && t.trend === 'UP') || (t.direction === 'SHORT' && t.trend === 'DOWN');
+                if (filterTrend === 'FOLLOW' && !isFollow) return false;
+                if (filterTrend === 'COUNTER' && isFollow) return false;
+            }
+            if (filterForecast !== 'ALL') {
+                const isWith = (t.direction === 'LONG' && t.forecast === 'UP') || (t.direction === 'SHORT' && t.forecast === 'DOWN');
+                if (filterForecast === 'WITH' && !isWith) return false;
+                if (filterForecast === 'AGAINST' && isWith) return false;
+            }
+            return true;
+        });
+
+        cardTrades.forEach(t => {
+            if (!stats[t.interval]) stats[t.interval] = { pnl: 0, wins: 0, closed: 0, open: 0 };
+            if (t.status === 'OPEN') {
+                stats[t.interval].open++;
+            } else {
+                stats[t.interval].closed++;
+                stats[t.interval].pnl += (t.pnl || 0);
+                if ((t.pnl || 0) > 0) stats[t.interval].wins++;
+            }
+        });
+
+        return Object.entries(stats).map(([interval, s]) => ({
+            interval,
+            pnl: Math.round(s.pnl * 100) / 100,
+            win_rate: s.closed > 0 ? Math.round((s.wins / s.closed) * 1000) / 10 : 0,
+            open: s.open,
+            closed: s.closed
+        })).sort((a,b) => {
+             const order = {'15min': 1, '1h': 2, '4h': 3};
+             return (order[a.interval] || 99) - (order[b.interval] || 99);
+        });
+
+    }, [data, filterStrategy, filterStatus, filterDirection, filterAsset, selectedAssets, filterTrend, filterForecast]);
+
     const sortedTrades = useMemo(() => {
         let items = [...dashboardData.trades];
         if (sortConfig) {
@@ -416,7 +459,8 @@ const TestModal = ({ onClose }) => {
     
     const renderContent = () => {
         if (showPerformers) {
-            return <PerformersView data={dashboardData} />; // <--- FIX APPLIED HERE
+            // FIX: Pass FILTERED dashboardData, not raw 'data'
+            return <PerformersView data={dashboardData} />;
         }
         if (showEquity) {
             return <LargeEquityChart trades={dashboardData.trades} />;
@@ -530,7 +574,7 @@ const TestModal = ({ onClose }) => {
                             </div>
                             <button onClick={() => setShowFilterAssetMenu(!showFilterAssetMenu)} style={{ background: selectedAssets.size > 0 ? '#0078d4' : '#333', border: '1px solid #555', borderRadius: '4px', color: 'white', padding: '0 8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronDown size={14} /></button>
                             {showFilterAssetMenu && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, width: '450px', maxHeight: '400px', overflowY: 'auto', overflowX: 'auto', background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(110px, 1fr))', gap: '15px' }}>
+                                <div style={{ position: 'absolute', top: '100%', left: 0, width: '450px', maxWidth: '85vw', maxHeight: '400px', overflowY: 'auto', overflowX: 'auto', background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(110px, 1fr))', gap: '15px' }}>
                                     {Object.entries(ASSET_CATEGORIES).map(([category, assets]) => {
                                         const allSelected = assets.every(a => selectedAssets.has(a));
                                         return (
@@ -587,7 +631,8 @@ const TestModal = ({ onClose }) => {
                             {/* --- FORWARD SPECIFIC: INTERVAL BREAKDOWN --- */}
                             {mode === 'forward' && !showEquity && !showPerformers && (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
-                                    {data?.intervals?.map(intv => (
+                                    {/* FIX: Use Calculated Interval Stats (filtered by strategy) instead of raw backend data */}
+                                    {intervalStats.map(intv => (
                                         <IntervalCard key={intv.interval} intervalData={intv} isActive={filterInterval === intv.interval} onClick={() => setFilterInterval(filterInterval === intv.interval ? null : intv.interval)} />
                                     ))}
                                 </div>
