@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Activity } from 'lucide-react';
 
-const MonitorModal = ({ onClose, onStart }) => {
+const MonitorModal = ({ onClose, onStart, strategy }) => {
     const [selectedInterval, setSelectedInterval] = useState('15min');
 
     const options = [
@@ -14,44 +14,41 @@ const MonitorModal = ({ onClose, onStart }) => {
     ];
 
     const handleStart = () => {
-        // 1. SAFELY Attempt to request permission (Only if browser supports it)
         if ('Notification' in window) {
             try {
                 if (Notification.permission !== "granted" && Notification.permission !== "denied") {
                     Notification.requestPermission().catch(err => console.log("Notification Error:", err));
                 }
-            } catch (e) {
-                console.warn("Notifications not supported on this device.");
-            }
+            } catch (e) { console.warn("Notifications not supported"); }
         }
-
-        // 2. ALWAYS start the monitor and close modal, even if Notifications fail
-        onStart(selectedInterval);
+        onStart(selectedInterval, strategy); // Pass strategy back to App
     };
 
     return (
         <div style={{
             position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 3000,
+            backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2000,
             display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
             <div style={{
-                width: '350px', backgroundColor: '#1e1e1e',
-                borderRadius: '12px', border: '1px solid #ff9800',
-                boxShadow: '0 0 20px rgba(255, 152, 0, 0.3)',
-                padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px'
+                backgroundColor: '#1e1e1e', padding: '25px', borderRadius: '12px',
+                border: '1px solid #444', width: '320px', display: 'flex', flexDirection: 'column', gap: '15px'
             }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ color: '#ff9800', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Activity size={20} /> Monitor Market
-                    </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
+                    <div>
+                        <h2 style={{ color: 'white', margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Activity color="#ff9800" size={20} /> Monitor
+                        </h2>
+                        <div style={{color:'#888', fontSize:'0.75rem', marginTop:'2px'}}>
+                            Strategy: <span style={{color:'#ff9800', fontWeight:'bold'}}>{strategy?.toUpperCase() || 'BASIC'}</span>
+                        </div>
+                    </div>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer' }}><X /></button>
                 </div>
 
-                <div style={{ color: '#ddd', fontSize: '0.9rem', lineHeight: '1.4' }}>
-                    Select a timeframe. The app will scan for signals at the close of every candle and notify you.
-                    <br/><br/>
-                    <em style={{color: '#888'}}>⚠️ Keep this tab open. Anti-logout is active.</em>
+                <div style={{ background: 'rgba(255, 152, 0, 0.1)', border: '1px solid #ff9800', borderRadius: '6px', padding: '10px', fontSize: '0.8rem', color: '#ffcc80' }}>
+                    This will run a background scan every minute for the selected timeframe using the <strong>{strategy?.toUpperCase() || 'BASIC'}</strong> strategy.
+                    <br/><br/><em style={{color:'#888'}}>⚠️ Keep this tab open. Anti-logout is active.</em>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

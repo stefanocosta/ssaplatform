@@ -8,10 +8,6 @@ const ASSET_CATEGORIES = {
     'Stocks': ['AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
 };
 
-// Flatten to a single sorted list for the dropdown logic if needed, 
-// but we mostly use categories now.
-const ALL_ASSETS = Object.values(ASSET_CATEGORIES).flat().sort();
-
 // --- INTERNAL COMPONENT: FULL SCREEN EQUITY CHART ---
 const LargeEquityChart = ({ trades }) => {
     const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -61,10 +57,18 @@ const LargeEquityChart = ({ trades }) => {
     const pathD = chartData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.val)}`).join(' ');
     const zeroY = getY(1000);
 
-    const handleMouseMove = (e) => {
+    // --- UNIFIED INTERACTION HANDLER ---
+    const handleInteraction = (clientX) => {
         if (!containerRef.current) return;
         const rect = containerRef.current.getBoundingClientRect();
-        const svgX = (e.clientX - rect.left) / rect.width * width;
+        
+        // Calculate X position relative to the SVG coordinate system
+        const relativeX = clientX - rect.left;
+        
+        // Ensure we are within bounds
+        if (relativeX < 0 || relativeX > rect.width) return;
+
+        const svgX = (relativeX / rect.width) * width;
         
         let closestDist = Infinity;
         let closest = null;
@@ -80,16 +84,33 @@ const LargeEquityChart = ({ trades }) => {
         setHoveredPoint(closest);
     };
 
+    // Event Wrappers
+    const handleMouseMove = (e) => handleInteraction(e.clientX);
+    
+    const handleTouchMove = (e) => {
+        // Capture touch move for smooth "scrubbing"
+        if (e.touches && e.touches.length > 0) {
+            handleInteraction(e.touches[0].clientX);
+        }
+    };
+
     return (
         <div 
             ref={containerRef}
+            // Mouse Events
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setHoveredPoint(null)}
+            // Touch Events (Fixed)
+            onTouchStart={handleTouchMove}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={() => setHoveredPoint(null)}
             style={{ 
                 flex: 1, position: 'relative', 
                 background: '#222', borderRadius: '8px', 
                 margin: '10px 0', border: '1px solid #444',
-                overflow: 'hidden', cursor: 'crosshair'
+                overflow: 'hidden', cursor: 'crosshair',
+                // FIX: This prevents the browser from scrolling the page while you drag on the chart
+                touchAction: 'none' 
             }}
         >
             <div style={{ position: 'absolute', top: 10, left: 15, color: '#888', fontSize: '0.8rem' }}>Growth of $1,000 Capital</div>
@@ -185,7 +206,6 @@ const ForwardTestModal = ({ onClose }) => {
         fetchResults();
     }, []);
 
-    // Toggle Individual Asset
     const toggleAsset = (symbol) => {
         const newSet = new Set(selectedAssets);
         if (newSet.has(symbol)) newSet.delete(symbol);
@@ -193,21 +213,13 @@ const ForwardTestModal = ({ onClose }) => {
         setSelectedAssets(newSet);
     };
 
-    // Toggle Entire Category
+    // Toggle Entire Category (Clickable Headers)
     const toggleCategory = (categoryName) => {
         const assetsInCategory = ASSET_CATEGORIES[categoryName];
-        
-        // Check if all assets in this category are already selected
         const allSelected = assetsInCategory.every(a => selectedAssets.has(a));
-        
         const newSet = new Set(selectedAssets);
-        if (allSelected) {
-            // Deselect all
-            assetsInCategory.forEach(a => newSet.delete(a));
-        } else {
-            // Select all
-            assetsInCategory.forEach(a => newSet.add(a));
-        }
+        if (allSelected) assetsInCategory.forEach(a => newSet.delete(a));
+        else assetsInCategory.forEach(a => newSet.add(a));
         setSelectedAssets(newSet);
     };
 
@@ -220,7 +232,6 @@ const ForwardTestModal = ({ onClose }) => {
             if (filterStatus !== 'ALL' && t.status !== filterStatus) return false;
             if (filterDirection !== 'ALL' && t.direction !== filterDirection) return false;
 
-            // Asset Filter: Check Set OR Search String
             if (selectedAssets.size > 0) {
                 if (!selectedAssets.has(t.symbol)) return false;
             } else if (filterAsset) {
@@ -369,7 +380,7 @@ const ForwardTestModal = ({ onClose }) => {
                         <span style={{fontSize:'0.75rem', fontWeight:'bold', color:'#aaa'}}>FILTERS</span>
                     </div>
                     
-                    {/* ASSET FILTER (Categorized Mega Menu) */}
+                    {/* ASSET FILTER */}
                     <div style={{ position: 'relative', display: 'flex', gap: '2px' }}>
                         <div style={{ position: 'relative' }}>
                             <Search size={14} color="#888" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }} />
@@ -387,61 +398,26 @@ const ForwardTestModal = ({ onClose }) => {
                             />
                         </div>
                         
-                        <button 
-                            onClick={() => setShowAssetMenu(!showAssetMenu)}
-                            style={{ 
-                                background: selectedAssets.size > 0 ? '#0078d4' : '#333', 
-                                border: '1px solid #555', borderRadius: '4px', color: 'white', 
-                                padding: '0 8px', cursor: 'pointer', display: 'flex', alignItems: 'center'
-                            }}
-                        >
-                            <ChevronDown size={14} />
-                        </button>
+                        <button onClick={() => setShowAssetMenu(!showAssetMenu)} style={{ background: selectedAssets.size > 0 ? '#0078d4' : '#333', border: '1px solid #555', borderRadius: '4px', color: 'white', padding: '0 8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronDown size={14} /></button>
 
-                        {/* MEGA MENU POPUP */}
+                        {/* MEGA MENU */}
                         {showAssetMenu && (
-                            <div style={{ 
-                                position: 'absolute', top: '100%', left: 0, width: '450px', maxHeight: '400px', overflowY: 'auto',
-                                background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, 
-                                padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
-                                display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px'
-                            }}>
+                            <div style={{ position: 'absolute', top: '100%', left: 0, width: '450px', maxHeight: '400px', overflowY: 'auto', background: '#222', border: '1px solid #555', borderRadius: '6px', zIndex: 100, padding: '15px', marginTop: '5px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
                                 {Object.entries(ASSET_CATEGORIES).map(([category, assets]) => {
-                                    // Check if all items in this category are selected
                                     const allSelected = assets.every(a => selectedAssets.has(a));
-                                    
                                     return (
                                         <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                            <div 
-                                                onClick={() => toggleCategory(category)}
-                                                style={{ 
-                                                    color: allSelected ? '#fff' : '#0078d4', 
-                                                    background: allSelected ? '#0078d4' : 'transparent',
-                                                    fontSize: '0.75rem', fontWeight: 'bold', 
-                                                    borderBottom: '1px solid #444', padding: '4px', marginBottom: '4px',
-                                                    cursor: 'pointer', borderRadius: '4px'
-                                                }}
-                                            >
+                                            <div onClick={() => toggleCategory(category)} style={{ color: allSelected ? '#fff' : '#0078d4', background: allSelected ? '#0078d4' : 'transparent', fontSize: '0.75rem', fontWeight: 'bold', borderBottom: '1px solid #444', padding: '4px', marginBottom: '4px', cursor: 'pointer', borderRadius: '4px' }}>
                                                 {category.toUpperCase()}
                                             </div>
                                             {assets.map(sym => (
-                                                <button 
-                                                    key={sym}
-                                                    onClick={() => toggleAsset(sym)}
-                                                    style={{
-                                                        textAlign: 'left', background: selectedAssets.has(sym) ? '#0078d4' : '#333',
-                                                        color: selectedAssets.has(sym) ? 'white' : '#ccc',
-                                                        border: 'none', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem',
-                                                        transition: 'all 0.1s'
-                                                    }}
-                                                >
+                                                <button key={sym} onClick={() => toggleAsset(sym)} style={{ textAlign: 'left', background: selectedAssets.has(sym) ? '#0078d4' : '#333', color: selectedAssets.has(sym) ? 'white' : '#ccc', border: 'none', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', transition: 'all 0.1s' }}>
                                                     {sym}
                                                 </button>
                                             ))}
                                         </div>
                                     );
                                 })}
-                                
                                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #444', paddingTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
                                     <button onClick={() => {setSelectedAssets(new Set());}} style={{background:'none', border:'none', color:'#f44336', cursor:'pointer', marginRight:'15px', fontSize:'0.8rem'}}>Clear All</button>
                                     <button onClick={() => setShowAssetMenu(false)} style={{background:'#0078d4', border:'none', color:'white', padding:'5px 15px', borderRadius:'4px', cursor:'pointer', fontSize:'0.8rem', fontWeight:'bold'}}>Done</button>

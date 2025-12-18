@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, TrendingUp, TrendingDown, AlertCircle, ChevronLeft, ChevronRight, Minus, Filter, Maximize2, Minimize2 } from 'lucide-react';
 
-const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
+const ScannerModal = ({ onClose, interval, strategy, onSelectAsset }) => {
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeSymbol, setActiveSymbol] = useState(null);
@@ -10,15 +10,16 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
     
     const [showSignalsOnly, setShowSignalsOnly] = useState(false);
 
+    // Re-scan when interval OR strategy changes
     useEffect(() => {
         scanMarket();
-    }, []);
+    }, [interval, strategy]);
 
     const scanMarket = async () => {
         setLoading(true);
         const token = localStorage.getItem('access_token');
         try {
-            const response = await fetch(`/api/scan?interval=${interval}`, {
+            const response = await fetch(`/api/scan?interval=${interval}&strategy=${strategy}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -44,9 +45,32 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
         return '#b0b0b0'; 
     };
 
-    const displayedResults = showSignalsOnly 
-        ? results.filter(r => r.signal !== null)
+    // --- FILTER LOGIC ---
+    // If "Signals Only" is checked, hide anything that isn't a NEW signal
+    const filteredResults = showSignalsOnly 
+        ? results.filter(r => r.signal !== null && r.bars_ago == 0)
         : results;
+
+    // --- SORT LOGIC (UPDATED) ---
+    // 1. Active Signals (New) always on top.
+    // 2. Everything else sorted by PnL % Descending.
+    const displayedResults = filteredResults.concat().sort((a, b) => {
+        // Identify New Signals (Age = 0)
+        const aIsNew = a.signal !== null && a.bars_ago == 0;
+        const bIsNew = b.signal !== null && b.bars_ago == 0;
+
+        // Priority 1: New Signals to the Top
+        if (aIsNew && !bIsNew) return -1; // a comes first
+        if (!aIsNew && bIsNew) return 1;  // b comes first
+
+        // Priority 2: Sort by PnL % Descending (High Profit -> Low Profit -> Negative)
+        // This applies to both groups:
+        // - Between two New Signals (rare to have PnL, usually 0)
+        // - Between two Old/Neutral assets
+        const pnlA = a.pnl_pct || 0;
+        const pnlB = b.pnl_pct || 0;
+        return pnlB - pnlA; 
+    });
 
     if (isCollapsed) {
         return (
@@ -69,13 +93,11 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
     }
 
     // --- DYNAMIC GRID LAYOUT ---
-    // Detailed: Tightened spacing (1.1fr asset, tighter stats)
     const detailedGrid = '1.1fr 0.3fr 0.4fr 0.4fr 0.3fr 0.75fr 0.6fr 0.5fr';
-    // Compact: Just Asset and Signal
     const compactGrid = '1.5fr 0.5fr';
 
     const currentGrid = isDetailed ? detailedGrid : compactGrid;
-    const currentWidth = isDetailed ? '620px' : '260px'; // Resize modal based on view
+    const currentWidth = isDetailed ? '620px' : '260px'; 
 
     return (
         <div style={{
@@ -86,7 +108,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
             borderRadius: '12px', border: '1px solid #444',
             display: 'flex', flexDirection: 'column',
             boxShadow: '0 4px 30px rgba(0,0,0,0.7)', zIndex: 1000,
-            transition: 'width 0.2s ease-in-out', // Smooth resize animation
+            transition: 'width 0.2s ease-in-out', 
             animation: 'slideIn 0.3s ease-out'
         }}>
             {/* HEADER */}
@@ -99,9 +121,18 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                     <h2 style={{ color: '#d1d4dc', margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <RefreshCw className={loading ? 'spinner' : ''} size={14} />
                         {isDetailed ? `Scanner (${interval})` : interval}
+                        <span style={{
+                            fontSize: '0.7rem', 
+                            color: '#ff9800', 
+                            border: '1px solid #ff980044', 
+                            padding: '1px 4px', 
+                            borderRadius: '3px', 
+                            marginLeft: '5px'
+                        }}>
+                            {strategy?.toUpperCase()}
+                        </span>
                     </h2>
 
-                    {/* FILTER TOGGLE (Only show in detailed view to save space) */}
                     {isDetailed && (
                         <label style={{ 
                             display: 'flex', alignItems: 'center', gap: '4px', 
@@ -114,13 +145,12 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                                 onChange={e => setShowSignalsOnly(e.target.checked)}
                                 style={{accentColor: '#0078d4', width:'12px', height:'12px'}}
                             />
-                            Signals Only
+                            New Signals Only
                         </label>
                     )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '2px' }}>
-                    {/* EXPAND/COLLAPSE BUTTON */}
                     <button 
                         onClick={() => setIsDetailed(!isDetailed)} 
                         title={isDetailed ? "Compact View" : "Detailed View"}
@@ -144,7 +174,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                 ) : displayedResults.length === 0 ? (
                     <div style={{ padding: '40px 10px', textAlign: 'center', color: '#888' }}>
                         <AlertCircle size={24} style={{ marginBottom: '10px', opacity: 0.5 }} />
-                        <p style={{fontSize: '0.8rem'}}>No results.</p>
+                        <p style={{fontSize: '0.8rem'}}>{showSignalsOnly ? "No new signals found." : "No results."}</p>
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gap: '3px' }}>
@@ -156,7 +186,6 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                         }}>
                             <span>ASSET</span>
                             
-                            {/* DETAILED COLUMNS */}
                             {isDetailed && (
                                 <>
                                     <span style={{textAlign:'center'}}>TRND</span>
@@ -175,7 +204,16 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                         {displayedResults.map((item, idx) => {
                             const isActive = activeSymbol === item.symbol;
                             const pnlValue = item.pnl_pct !== undefined && item.pnl_pct !== null ? item.pnl_pct : 0;
-                            const hasPosition = item.position && item.position !== 'NEUTRAL';
+                            
+                            const isLong = item.signal === 'LONG' || item.signal === 'BUY';
+                            const isShort = item.signal === 'SHORT' || item.signal === 'SELL';
+                            const hasPosition = isLong || isShort;
+
+                            // IS NEW SIGNAL?
+                            const isNewSignal = item.bars_ago == 0;
+                            
+                            const signalLabel = isLong ? 'BUY' : 'SELL';
+                            const signalColor = isLong ? '#00ff00' : '#ff0000';
 
                             return (
                                 <div 
@@ -189,9 +227,10 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                                         border: isActive ? '1px solid #0078d4' : '1px solid transparent',
                                         padding: '6px 6px', borderRadius: '4px',
                                         cursor: 'pointer', 
-                                        borderLeft: item.signal 
-                                            ? `3px solid ${item.signal === 'BUY' ? '#00ff00' : '#ff0000'}`
-                                            : (pnlValue > 0 ? '3px solid #4caf50' : '3px solid transparent'),
+                                        // Left Border: Shows position status (green/red) or Profit status
+                                        borderLeft: hasPosition 
+                                            ? `3px solid ${isLong ? '#00c853' : '#ff3d00'}`
+                                            : '3px solid transparent',
                                         transition: 'all 0.1s'
                                     }}
                                 >
@@ -199,7 +238,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                                     <div style={{overflow: 'hidden'}}>
                                         <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace:'nowrap' }}>{item.symbol}</div>
                                         {isDetailed && (
-                                            <div style={{ color: '#666', fontSize: '0.65rem' }}>{item.price.toFixed(item.price < 1 ? 4 : 2)}</div>
+                                            <div style={{ color: '#666', fontSize: '0.65rem' }}>{item.price > 0 ? item.price.toFixed(item.price < 1 ? 4 : 2) : '-'}</div>
                                         )}
                                     </div>
 
@@ -226,7 +265,7 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                                             <div style={{ textAlign: 'center', fontSize: '0.7rem' }}>
                                                 {hasPosition ? (
                                                     <>
-                                                        <span style={{color: item.position==='LONG'?'#4caf50':'#ef5350', fontWeight:'bold'}}>
+                                                        <span style={{color: isLong ?'#4caf50':'#ef5350', fontWeight:'bold'}}>
                                                             {item.position}
                                                         </span>
                                                         <span style={{color:'#888'}}> ({item.bars_ago})</span>
@@ -241,15 +280,15 @@ const ScannerModal = ({ onClose, interval, onSelectAsset }) => {
                                         </>
                                     )}
 
-                                    {/* 8. ACTIVE SIGNAL (Always Visible) */}
+                                    {/* 8. ACTIVE SIGNAL (Only show if NEW) */}
                                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                        {item.signal ? (
+                                        {isNewSignal ? (
                                             <div style={{ 
-                                                color: item.signal === 'BUY' ? '#00ff00' : '#ff0000',
+                                                color: signalColor,
                                                 fontWeight: 'bold', fontSize: '0.7rem',
                                                 background: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '3px'
                                             }}>
-                                                {item.signal}
+                                                {signalLabel}
                                             </div>
                                         ) : null}
                                     </div>

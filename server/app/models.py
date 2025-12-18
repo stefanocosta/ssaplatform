@@ -40,6 +40,15 @@ class MarketData(db.Model):
     close = db.Column(db.Float, nullable=False)
     volume = db.Column(db.Float, nullable=True) 
     
+    # SSA Cache
+    ssa_trend = db.Column(db.Float, nullable=True)
+    ssa_cyclic = db.Column(db.Float, nullable=True)
+    ssa_noise = db.Column(db.Float, nullable=True)
+    
+    ssa_trend_dir = db.Column(db.String(10), nullable=True)
+    ssa_cycle_pos = db.Column(db.Integer, nullable=True)
+    ssa_fast_pos = db.Column(db.Integer, nullable=True)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -56,15 +65,18 @@ class MarketData(db.Model):
         db.Index('idx_symbol_interval_time', 'symbol', 'interval', 'time'),
     )
 
-# --- FIX: MOVED TO LEFT MARGIN (Not inside MarketData) ---
 class PaperTrade(db.Model):
-    __tablename__ = 'paper_trade' # Good practice to name tables explicitly
+    __tablename__ = 'paper_trade' 
     id = db.Column(db.Integer, primary_key=True)
     symbol = db.Column(db.String(20), nullable=False)
     interval = db.Column(db.String(10), nullable=False) 
     direction = db.Column(db.String(10), nullable=False) 
     status = db.Column(db.String(10), default='OPEN') 
     
+    # --- NEW: Strategy Column (defaults to 'basic') ---
+    strategy = db.Column(db.String(10), nullable=False, default='basic')
+    # --------------------------------------------------
+
     # Entry Details
     entry_time = db.Column(db.DateTime, nullable=False)
     entry_price = db.Column(db.Float, nullable=False)

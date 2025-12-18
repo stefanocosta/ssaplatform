@@ -1,5 +1,6 @@
 import numpy as np
 import pywt
+from scipy.linalg import hankel, svd
 # Add other necessary imports from your original script's SSA logic
 
 def ssa_decomposition(series, L):
@@ -115,3 +116,41 @@ def calculate_adaptive_L(series):
         # Fallback to a simple method if wavelet analysis fails
         print(f"Wavelet analysis failed in calculate_adaptive_L: {e}")
         return max(10, min(N // 4, 20))  # Conservative default
+    
+def get_ssa_diagnostics(series, L):
+    """
+    Returns detailed diagnostics including Eigenvalues and individual components.
+    """
+    N = len(series)
+    K = N - L + 1
+    
+    # 1. Embed
+    X = hankel(series[:L], series[L-1:])
+    
+    # 2. Decompose (SVD)
+    U, Sigma, VT = svd(X)
+    
+    # 3. Calculate Power (Eigenvalues)
+    eigenvalues = Sigma ** 2
+    total_power = np.sum(eigenvalues)
+    contributions = (eigenvalues / total_power) * 100
+    
+    # 4. Reconstruct Top Components Individually
+    # We reconstruct the first 10 components individually for visualization
+    # (Storing all 39 would be too heavy for the API response)
+    individual_components = []
+    
+    for i in range(min(L, 10)):
+        # Reconstruct single component
+        X_i = Sigma[i] * np.outer(U[:, i], VT[i, :])
+        X_i_rev = X_i[::-1]
+        
+        # Diagonal Averaging
+        g = [X_i_rev.diagonal(j).mean() for j in range(-X_i_rev.shape[0]+1, X_i_rev.shape[1])]
+        individual_components.append(list(g))
+        
+    return {
+        "contributions": contributions.tolist(),
+        "components": individual_components,
+        "singular_values": Sigma.tolist()
+    }

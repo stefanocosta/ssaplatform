@@ -18,7 +18,7 @@ app = create_app()
 def seed_database():
     with app.app_context():
         api_key = app.config['TWELVE_DATA_API_KEY']
-        DELAY_PER_ASSET = 8 # Increased slightly to avoid rate limits with larger payloads
+        DELAY_PER_ASSET = 4 # Increased slightly to avoid rate limits with larger payloads
 
         print(f"🌱 Starting Full Database Seed for {len(TRACKED_ASSETS)} assets...")
         print("---------------------------------------------------")

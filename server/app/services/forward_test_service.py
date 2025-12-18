@@ -9,17 +9,10 @@ INVESTMENT_AMOUNT = 1000.0
 
 def get_interval_minutes(interval):
     """Returns the duration of the interval in minutes."""
-    mapping = {
-        '15min': 15,
-        '30min': 30,
-        '1h': 60,
-        '4h': 240,
-        '1day': 1440
-    }
+    mapping = { '15min': 15, '30min': 30, '1h': 60, '4h': 240, '1day': 1440 }
     return mapping.get(interval, 15)
 
 def get_historical_data_from_db(symbol, interval, limit=500):
-    """Fetches required historical data from the local database."""
     stmt = db.select(MarketData).filter(
         MarketData.symbol == symbol,
         MarketData.interval == interval,
@@ -41,64 +34,55 @@ def run_forward_test(interval, api_key=None):
     print(f"🧪 [ForwardTest] Running for {interval} on {len(TRACKED_ASSETS)} assets...")
     
     interval_mins = get_interval_minutes(interval)
-    # Allow a buffer (e.g., 20 mins) for late data or network delays
-    # If a 1h candle is > 1h 20m old, the market is likely closed.
     max_delay_minutes = interval_mins + 20 
     
+    strategies_to_test = ['basic', 'fast'] # Loop both strategies
+
     for symbol in TRACKED_ASSETS:
-        # 1. Get Data from DB
         ohlc = get_historical_data_from_db(symbol, interval, limit=500)
         
-        if not ohlc or len(ohlc) < 50:
-            continue
+        if not ohlc or len(ohlc) < 50: continue
         
-        # 2. Market Closed / Staleness Check
         last_candle = ohlc[-1]
         last_time = last_candle.get('datetime_obj')
-        if not last_time:
-            last_time = datetime.utcfromtimestamp(last_candle['time'])
+        if not last_time: last_time = datetime.utcfromtimestamp(last_candle['time'])
             
-        # Calculate how old this data is
         now = datetime.utcnow()
         diff = now - last_time
-        diff_minutes = diff.total_seconds() / 60
-        
-        if diff_minutes > max_delay_minutes:
-            # print(f"   💤 Skipping {symbol}: Market Closed/Stale (Data is {int(diff_minutes)} min old)")
-            continue
+        if (diff.total_seconds() / 60) > max_delay_minutes: continue
 
         df = pd.DataFrame(ohlc)
         closes = df['close'].values.flatten()
         
-        # 3. Analyze
-        result = analyze_market_snapshot(closes)
-        
-        if not result or not result['signal']:
-            continue 
+        # --- LOOP STRATEGIES ---
+        for strategy in strategies_to_test:
+            result = analyze_market_snapshot(closes, strategy=strategy)
             
-        signal = result['signal'] 
-        price = float(result['price'])
-        
-        # Extract Snapshot Data
-        snapshot = {
-            'trend': result['trend_dir'],
-            'forecast': result['forecast_dir'],
-            'cycle': result['cycle_pct'],
-            'fast': result['fast_pct']
-        }
-        
-        print(f"   ⚡ SIGNAL DETECTED: {symbol} {signal} @ {price}")
+            if not result or not result['signal']: continue 
+                
+            signal = result['signal'] 
+            price = float(result['price'])
+            
+            snapshot = {
+                'trend': result['trend_dir'],
+                'forecast': result['forecast_dir'],
+                'cycle': result['cycle_pct'],
+                'fast': result['fast_pct'],
+                'strategy': strategy # Pass strategy to handler
+            }
+            
+            print(f"   ⚡ {strategy.upper()} SIGNAL: {symbol} {signal} @ {price}")
 
-        # 4. Execute Trade Logic
-        if signal == 'BUY':
-            handle_buy_signal(symbol, interval, price, last_time, snapshot)
-        elif signal == 'SELL':
-            handle_sell_signal(symbol, interval, price, last_time, snapshot)
+            if signal == 'BUY':
+                handle_buy_signal(symbol, interval, price, last_time, snapshot)
+            elif signal == 'SELL':
+                handle_sell_signal(symbol, interval, price, last_time, snapshot)
 
 def handle_buy_signal(symbol, interval, price, time, snapshot):
-    # Close Shorts
+    strat = snapshot['strategy']
+    # Close Shorts FOR THIS STRATEGY ONLY
     open_shorts = PaperTrade.query.filter_by(
-        symbol=symbol, interval=interval, direction='SHORT', status='OPEN'
+        symbol=symbol, interval=interval, direction='SHORT', status='OPEN', strategy=strat
     ).all()
     
     for trade in open_shorts:
@@ -112,15 +96,17 @@ def handle_buy_signal(symbol, interval, price, time, snapshot):
         trend_snapshot=snapshot['trend'],
         forecast_snapshot=snapshot['forecast'],
         cycle_snapshot=snapshot['cycle'],
-        fast_snapshot=snapshot['fast']
+        fast_snapshot=snapshot['fast'],
+        strategy=strat # Save Strategy
     )
     db.session.add(new_trade)
     db.session.commit()
 
 def handle_sell_signal(symbol, interval, price, time, snapshot):
-    # Close Longs
+    strat = snapshot['strategy']
+    # Close Longs FOR THIS STRATEGY ONLY
     open_longs = PaperTrade.query.filter_by(
-        symbol=symbol, interval=interval, direction='LONG', status='OPEN'
+        symbol=symbol, interval=interval, direction='LONG', status='OPEN', strategy=strat
     ).all()
     
     for trade in open_longs:
@@ -134,7 +120,8 @@ def handle_sell_signal(symbol, interval, price, time, snapshot):
         trend_snapshot=snapshot['trend'],
         forecast_snapshot=snapshot['forecast'],
         cycle_snapshot=snapshot['cycle'],
-        fast_snapshot=snapshot['fast']
+        fast_snapshot=snapshot['fast'],
+        strategy=strat # Save Strategy
     )
     db.session.add(new_trade)
     db.session.commit()

@@ -13,6 +13,7 @@ from .services import ssa_service, forecast_service
 from app.services.data_manager import get_historical_data
 
 from app.services.data_manager import TRACKED_ASSETS # Import the list
+from app.services import backtest_service
 
 # The main blueprint for API routes
 bp = Blueprint('api', __name__, url_prefix='/api')
@@ -123,63 +124,216 @@ def user_info():
 def calculate_cycle_position(component_values, component_type='cyclic'):
     """
     Calculate cycle position (0-100%) based on Average Peaks and Valleys.
-    0% = Average Valley (Support)
-    100% = Average Peak (Resistance)
-    Values can exceed 100% or drop below 0% (Overbought/Oversold).
     """
-    # Safety check for empty or short data
     if len(component_values) < 5:
         return 50, 'flat', 1.0, -1.0
     
     current_value = component_values[-1]
     
-    # 1. Identify Peaks (Resistance) -> Local Maxima > 0
-    # We use a simple height=0 to capture all positive local maxima
     peaks_indices, _ = find_peaks(component_values, height=0)
-    
-    if len(peaks_indices) > 0:
-        avg_resistance = np.mean(component_values[peaks_indices])
-    else:
-        # Fallback: If no distinct peaks found, use the global Max of the data
-        # (Ensure it is at least slightly positive to avoid division errors)
-        avg_resistance = max(np.max(component_values), 0.0001)
+    avg_resistance = np.mean(component_values[peaks_indices]) if len(peaks_indices) > 0 else max(np.max(component_values), 0.0001)
 
-    # 2. Identify Valleys (Support) -> Local Minima < 0
-    # We invert the data to find peaks, which corresponds to valleys in original data
     valleys_indices, _ = find_peaks(-component_values, height=0)
+    avg_support = np.mean(component_values[valleys_indices]) if len(valleys_indices) > 0 else min(np.min(component_values), -0.0001)
     
-    if len(valleys_indices) > 0:
-        avg_support = np.mean(component_values[valleys_indices])
-    else:
-        # Fallback: If no distinct valleys found, use the global Min of the data
-        # (Ensure it is at least slightly negative)
-        avg_support = min(np.min(component_values), -0.0001)
-    
-    # 3. Calculate Range
     cycle_range = avg_resistance - avg_support
-    
-    # Safety: Avoid division by zero if flatline
-    if cycle_range == 0:
-        cycle_range = 1.0
+    if cycle_range == 0: cycle_range = 1.0
 
-    # 4. Calculate Percentage Position
-    # Formula: (Value - Bottom) / (Top - Bottom) * 100
     cycle_position = ((current_value - avg_support) / cycle_range) * 100
-    
-    # Round for display
     cycle_position = int(round(cycle_position))
     
-    # 5. Determine Direction (Slope of last few points)
     direction = 'flat'
-    # Look at the last 3 points to determine immediate direction
     if len(component_values) >= 3:
         slope = component_values[-1] - component_values[-2]
-        if slope > 0: 
-            direction = 'rising'
-        elif slope < 0: 
-            direction = 'falling'
+        if slope > 0: direction = 'rising'
+        elif slope < 0: direction = 'falling'
     
     return cycle_position, direction, avg_resistance, avg_support
+
+# --- ANALYSIS HELPER ---
+def perform_single_analysis(symbol, interval, api_key, strategy='basic'):
+    """
+    Performs the SSA and Signal analysis for a single timeframe.
+    Returns a dictionary of results or None if failed.
+    """
+    # Fix strategy case sensitivity
+    strategy = strategy.lower() if strategy else 'basic'
+
+    ohlc_data = get_historical_data(symbol, interval, api_key, limit=500)
+    if not ohlc_data or len(ohlc_data) < 50:
+        return None
+
+    df = pd.DataFrame(ohlc_data)
+    
+    # --- CRITICAL FIX: SORT DATA ---
+    # Ensures SSA math is accurate even if DB returns unsorted rows
+    if 'time' in df.columns:
+        df['time'] = pd.to_numeric(df['time']) 
+        df.sort_values('time', ascending=True, inplace=True)
+    
+    close_prices = df['close'].values.flatten()
+    N = len(close_prices)
+    
+    # Adaptive L
+    L = min(39, N // 2)
+
+    try:
+        components = ssa_service.ssa_decomposition(close_prices, L)
+        trend = components[0]
+        cyclic = components[1:min(3, L)].sum(axis=0)
+        noise = components[min(3, L):min(6, L)].sum(axis=0)
+        reconstructed = trend + cyclic
+
+        # Stats
+        cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
+        fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
+        
+        # Directions
+        curr_trend_val = trend[-1]
+        prev_trend_val = trend[-2]
+        trend_dir = "Bullish" if curr_trend_val > prev_trend_val else "Bearish"
+
+        curr_noise = noise[-1]
+        prev_noise = noise[-2]
+        # Explicit boolean cast for JSON serialization
+        fast_rising = bool(curr_noise > prev_noise) 
+
+        # Signal Status
+        last_signal = "NEUTRAL"
+        days_since_signal = -1
+        entry_price = 0.0 
+        
+        # --- STRATEGY 1: BASIC (Standard SSA Mean Reversion) ---
+        if strategy == 'basic':
+            for i in range(N-1, max(0, N-60), -1):
+                c_price = close_prices[i]
+                c_trend = trend[i]
+                c_recon = reconstructed[i]
+                c_noise = noise[i]
+                p_noise = noise[i-1]
+                
+                is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
+                is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
+                is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
+                is_noise_sell = (c_noise > 0) and (c_noise <= p_noise)
+                
+                if is_hot_buy and is_noise_buy:
+                    last_signal = "LONG"
+                    days_since_signal = (N - 1) - i
+                    entry_price = c_price
+                    break
+                elif is_hot_sell and is_noise_sell:
+                    last_signal = "SHORT"
+                    days_since_signal = (N - 1) - i
+                    entry_price = c_price
+                    break
+        
+        # --- STRATEGY 2: FAST (Replicated EXACT Logic from TradingChart.js) ---
+        elif strategy == 'fast':
+            # We calculate signal state for the whole series first
+            signals = np.zeros(N, dtype=int) # 0=None, 1=Long, -1=Short
+            down_count = 0
+            up_count = 0
+            
+            for k in range(1, N):
+                val = noise[k]
+                prev = noise[k-1]
+                
+                if val < 0:
+                    up_count = 0
+                    if val < prev: # Descending
+                        down_count += 1
+                        if down_count == 5:
+                            signals[k] = 1 # F5 LONG
+                    elif val > prev: # Ascending (Turn)
+                        if 0 < down_count < 5:
+                            signals[k] = 1 # REV LONG
+                        down_count = 0 # Reset
+                
+                elif val > 0:
+                    down_count = 0
+                    if val > prev: # Ascending
+                        up_count += 1
+                        if up_count == 5:
+                            signals[k] = -1 # F5 SHORT
+                    elif val < prev: # Descending (Turn)
+                        if 0 < up_count < 5:
+                            signals[k] = -1 # REV SHORT
+                        up_count = 0 # Reset
+                else:
+                    down_count = 0
+                    up_count = 0
+            
+            # Find last signal in window
+            for i in range(N-1, max(0, N-60), -1):
+                if signals[i] == 1:
+                    last_signal = "LONG"
+                    days_since_signal = (N - 1) - i
+                    entry_price = close_prices[i]
+                    break
+                elif signals[i] == -1:
+                    last_signal = "SHORT"
+                    days_since_signal = (N - 1) - i
+                    entry_price = close_prices[i]
+                    break
+        
+        return {
+            "interval": interval,
+            "trend": trend_dir,
+            "status": last_signal,
+            "bars_ago": days_since_signal,
+            "cycle_pct": int(cyc_pos),
+            "fast_pct": int(fast_pos),
+            "fast_rising": fast_rising,
+            "current_price": float(close_prices[-1]), # Return current price
+            "entry_price": float(entry_price), # Return entry price for PnL
+            "components": components # Return components for Forecast logic (internal use)
+        }
+
+    except Exception as e:
+        print(f"Error analyzing {interval}: {e}")
+        return None
+
+# --- SCANNER HELPER (Uses Core Analysis + Adds Forecast & PnL) ---
+def get_asset_scan_data(symbol, interval, strategy, api_key):
+    data = perform_single_analysis(symbol, interval, api_key, strategy=strategy)
+    
+    # Allow NEUTRAL signals to pass through so the frontend can display them and filter them
+    if data:
+        # PnL Calculation
+        pnl_pct = 0.0
+        if data['entry_price'] > 0 and data['status'] != 'NEUTRAL':
+            if data['status'] == 'LONG':
+                pnl_pct = ((data['current_price'] - data['entry_price']) / data['entry_price']) * 100
+            elif data['status'] == 'SHORT':
+                pnl_pct = ((data['entry_price'] - data['current_price']) / data['entry_price']) * 100
+
+        # Forecast Direction
+        forecast_dir = "FLAT"
+        try:
+            # We used 'components' in perform_single_analysis, passed here
+            f_vals = forecast_service.forecast_ssa_spectral(data['components'], forecast_steps=20, min_component=1)
+            if len(f_vals) > 0:
+                forecast_dir = "UP" if f_vals[-1] > f_vals[0] else "DOWN"
+        except:
+            pass
+
+        return {
+            "symbol": symbol,
+            # Set signal to None if Neutral so frontend filter works
+            "signal": data['status'] if data['status'] != 'NEUTRAL' else None, 
+            "position": data['status'],
+            "trend": data['trend'],
+            "trend_dir": "UP" if data['trend'] == "Bullish" else "DOWN", # Format for frontend
+            "fast_pct": data['fast_pct'],
+            "cycle_pct": data['cycle_pct'],
+            "fast_rising": data['fast_rising'],
+            "bars_ago": data['bars_ago'],
+            "price": data['current_price'],
+            "pnl_pct": round(pnl_pct, 2),
+            "forecast_dir": forecast_dir
+        }
+    return None
 
 # --- CHART DATA ROUTES ---
 
@@ -231,7 +385,6 @@ def get_chart_data():
     cyclic = components[1:min(3, L)].sum(axis=0) if components.shape[0] > 1 and L > 1 else np.zeros_like(close_prices)
     noise = components[min(3, L):min(6, L)].sum(axis=0) if components.shape[0] >= min(3, L) and L > min(3, L) else np.zeros_like(close_prices)
 
-    # --- NEW: Calculate Cycle Stats ---
     cyc_pos, cyc_dir, cyc_res, cyc_sup = calculate_cycle_position(cyclic, 'cyclic')
     noise_pos, noise_dir, noise_res, noise_sup = calculate_cycle_position(noise, 'noise')
 
@@ -286,7 +439,6 @@ def get_chart_data():
             "trend": trend_data, 
             "cyclic": cyclic_data, 
             "noise": noise_data,
-            # --- SEND STATS TO FRONTEND ---
             "stats": {
                 "cyclic": { "pos": cyc_pos, "dir": cyc_dir, "res": cyc_res, "sup": cyc_sup },
                 "noise": { "pos": noise_pos, "dir": noise_dir, "res": noise_res, "sup": noise_sup }
@@ -298,350 +450,109 @@ def get_chart_data():
 
     return jsonify(response_data)
 
-# --- HELPER FOR STALENESS ---
-def get_interval_minutes(interval):
-    # Added '1week' to the mapping (10080 minutes) to fix scanner filtering
-    mapping = { 
-        '1min': 1, 
-        '5min': 5, 
-        '15min': 15, 
-        '30min': 30, 
-        '1h': 60, 
-        '4h': 240, 
-        '1day': 1440,
-        '1week': 10080 
-    }
-    return mapping.get(interval, 60)
-
 @bp.route('/scan', methods=['GET'])
 @jwt_required()
 def scan_market():
     interval = request.args.get('interval', '1day')
-    use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
-    try:
-        l_param = int(request.args.get('l', 30))
-    except ValueError:
-        l_param = 30
-
-    scanner_results = []
+    strategy = request.args.get('strategy', 'basic').lower()
+    api_key = current_app.config['TWELVE_DATA_API_KEY']
     
-    # Calculate Max Allowed Delay (Interval + 20 mins buffer)
-    # Keeping variables for logging or future use, but logic is disabled below.
-    interval_mins = get_interval_minutes(interval)
-    max_delay_seconds = (interval_mins * 60) + (20 * 60) 
-    now_utc = datetime.utcnow()
-
-    # Loop through ALL tracked assets
+    scan_results = []
+    
     for symbol in TRACKED_ASSETS:
-        # 1. Fetch Data (Pass None as API Key to force DB-only)
-        ohlc_data = get_historical_data(symbol, interval, None, limit=500)
-        
-        if not ohlc_data or len(ohlc_data) < 60:
-            continue
+        result = get_asset_scan_data(symbol, interval, strategy, api_key)
+        if result:
+            scan_results.append(result)
 
-        # --- STALENESS CHECK REMOVED FOR SCANNER ---
-        # We want to see the last market state even if the market is closed (Stocks/Forex on Weekends)
-        # -------------------------------------------
+    scan_results.sort(key=lambda x: x['bars_ago'])
 
-        # 2. Prepare Data
-        df = pd.DataFrame(ohlc_data)
-        close_prices = df['close'].values.flatten()
-        N = len(close_prices)
-        
-        if use_adaptive_l:
-            L = 39 
-        else:
-            L = min(l_param, N // 2)
-
-        try:
-            # 3. Perform SSA
-            components = ssa_service.ssa_decomposition(close_prices, L)
-            trend = components[0]
-            cyclic = components[1:min(3, L)].sum(axis=0)
-            noise = components[min(3, L):min(6, L)].sum(axis=0)
-            reconstructed = trend + cyclic
-            
-            # Stats
-            cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
-            fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
-            
-            # Directions
-            curr_trend = trend[-1]
-            prev_trend = trend[-2]
-            trend_direction = "UP" if curr_trend > prev_trend else "DOWN"
-
-            forecast_dir = "FLAT"
-            try:
-                f_vals = forecast_service.forecast_ssa_spectral(components, forecast_steps=20, min_component=1)
-                if len(f_vals) > 0:
-                    forecast_dir = "UP" if f_vals[-1] > f_vals[0] else "DOWN"
-            except:
-                pass
-
-            # 4. FIND POSITION STATUS
-            active_signal_type = None 
-            position_type = "NEUTRAL" 
-            bars_ago = 0
-            entry_price = 0.0
-            pnl_pct = 0.0
-
-            # Check current bar first for immediate signal
-            c_price = close_prices[-1]
-            c_trend = trend[-1]
-            c_recon = reconstructed[-1]
-            c_noise = noise[-1]
-            p_noise = noise[-2]
-
-            is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
-            is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
-            is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
-            is_noise_sell = (c_noise > 0) and (c_noise <= p_noise)
-
-            if is_hot_buy and is_noise_buy:
-                active_signal_type = "BUY"
-            elif is_hot_sell and is_noise_sell:
-                active_signal_type = "SELL"
-
-            # Lookback loop 
-            curr_price = close_prices[-1]
-            for i in range(N-1, max(0, N-60), -1):
-                p_i = close_prices[i]
-                t_i = trend[i]
-                r_i = reconstructed[i]
-                n_i = noise[i]
-                pn_i = noise[i-1]
-
-                ib_hot = (r_i < t_i) and (p_i < r_i)
-                is_hot = (r_i > t_i) and (p_i > r_i)
-                ib_noise = (n_i < 0) and (n_i >= pn_i)
-                is_noise = (n_i > 0) and (n_i <= pn_i)
-
-                if ib_hot and ib_noise:
-                    position_type = "LONG"
-                    bars_ago = (N - 1) - i
-                    entry_price = p_i
-                    pnl_pct = ((curr_price - entry_price) / entry_price) * 100
-                    break
-                elif is_hot and is_noise:
-                    position_type = "SHORT"
-                    bars_ago = (N - 1) - i
-                    entry_price = p_i
-                    pnl_pct = ((entry_price - curr_price) / entry_price) * 100
-                    break
-            
-            scanner_results.append({
-                "symbol": symbol,
-                "price": curr_price,
-                "trend_dir": trend_direction,
-                "forecast_dir": forecast_dir,
-                "cycle_pct": int(cyc_pos),
-                "fast_pct": int(fast_pos),
-                "signal": active_signal_type, 
-                "position": position_type,    
-                "bars_ago": bars_ago,         
-                "pnl_pct": round(pnl_pct, 2)  
-            })
-
-        except Exception as e:
-            print(f"Scan error {symbol}: {e}")
-            continue
-
-    # Sort Results: Buy/Sell Signals FIRST, then High PnL
-    scanner_results.sort(key=lambda x: (
-        0 if x['signal'] else 1,  # Puts BUY/SELL at top
-        -x['pnl_pct']             # Then sorts by PnL
-    ))
-
-    return jsonify(scanner_results)
+    return jsonify(scan_results)
 
 @bp.route('/analyze', methods=['GET'])
 @jwt_required()
 def analyze_asset():
     symbol = request.args.get('symbol')
     interval = request.args.get('interval', '1day')
-    use_adaptive_l = request.args.get('adaptive_l', 'true').lower() == 'true'
-    try:
-        l_param = int(request.args.get('l', 30))
-    except ValueError:
-        l_param = 30
+    strategy = request.args.get('strategy', 'basic').lower()
+    api_key = current_app.config['TWELVE_DATA_API_KEY']
 
     if not symbol:
         return jsonify({"error": "Symbol required"}), 400
 
-    api_key = current_app.config['TWELVE_DATA_API_KEY']
-    ohlc_data = get_historical_data(symbol, interval, api_key, limit=500)
-    
-    if not ohlc_data or len(ohlc_data) < 50:
+    # 1. Analyze PRIMARY Timeframe
+    primary_data = perform_single_analysis(symbol, interval, api_key, strategy)
+    if not primary_data:
         return jsonify({"error": "Insufficient data"}), 400
 
-    df = pd.DataFrame(ohlc_data)
-    close_prices = df['close'].values.flatten()
+    # 2. Determine Higher Timeframes (HTF)
+    htf_map = {
+        '1min':  ['5min', '15min'],
+        '5min':  ['15min', '1h'],
+        '15min': ['1h', '4h'],
+        '30min': ['1h', '4h'],
+        '1h':    ['4h', '1day'],
+        '4h':    ['1day', '1week'],
+        '1day':  ['1week']
+    }
     
-    N = len(close_prices)
-    if use_adaptive_l:
-        L = 39 
+    htf_list = htf_map.get(interval, [])
+    htf_results = []
+
+    # 3. Analyze HTFs
+    for htf in htf_list:
+        res = perform_single_analysis(symbol, htf, api_key, strategy)
+        if res:
+            # FIX: Remove non-serializable 'components' array before sending to frontend
+            res.pop('components', None)
+            htf_results.append(res)
+
+    # 4. Generate Recommendation Text (Based on Primary)
+    recs = []
+    fast_status_str = "Rising ↗️" if primary_data['fast_rising'] else "Falling ↘️"
+    recs.append(f"The Fast Cycle is currently {fast_status_str} (at {primary_data['fast_pct']}%).")
+    
+    if primary_data['cycle_pct'] < 10: recs.append("The Cyclic component is extremely oversold.")
+    elif primary_data['cycle_pct'] > 90: recs.append("The Cyclic component is extremely overbought.")
+
+    if primary_data['status'] == "LONG":
+        recs.append(f"Currently in a LONG position (triggered {primary_data['bars_ago']} bars ago).")
+    elif primary_data['status'] == "SHORT":
+        recs.append(f"Currently in a SHORT position (triggered {primary_data['bars_ago']} bars ago).")
     else:
-        L = min(l_param, N // 2)
+        recs.append("No active positions were triggered in the last 60 bars.")
 
-    try:
-        components = ssa_service.ssa_decomposition(close_prices, L)
-        
-        trend = components[0]
-        cyclic = components[1:min(3, L)].sum(axis=0)
-        noise = components[min(3, L):min(6, L)].sum(axis=0)
-        reconstructed = trend + cyclic
-
-        # --- 1. CALCULATE POSITIONS ---
-        cyc_pos, _, _, _ = calculate_cycle_position(cyclic, 'cyclic')
-        fast_pos, _, _, _ = calculate_cycle_position(noise, 'noise')
-        
-        # Trend Direction
-        curr_trend_val = trend[-1]
-        prev_trend_val = trend[-2]
-        trend_dir = "Bullish" if curr_trend_val > prev_trend_val else "Bearish"
-
-        # Fast Cycle Direction
-        curr_noise = noise[-1]
-        prev_noise = noise[-2]
-        fast_rising = curr_noise > prev_noise
-
-        # --- 2. FIND CURRENT POSITION (Last Signal) ---
-        last_signal = "NEUTRAL"
-        days_since_signal = -1
-        
-        # Look back 60 bars for the most recent valid signal
-        for i in range(N-1, N-60, -1):
-            c_price = close_prices[i]
-            c_trend = trend[i]
-            c_recon = reconstructed[i]
-            c_noise = noise[i]
-            p_noise = noise[i-1]
-            
-            is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
-            is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
-            is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
-            is_noise_sell = (c_noise > 0) and (c_noise <= p_noise)
-            
-            if is_hot_buy and is_noise_buy:
-                last_signal = "LONG"
-                days_since_signal = (N - 1) - i
-                break
-            elif is_hot_sell and is_noise_sell:
-                last_signal = "SHORT"
-                days_since_signal = (N - 1) - i
-                break
-
-        # --- 3. BUILD FRIENDLY RECOMMENDATION ---
-        recs = []
-
-        # A. FAST CYCLE STATUS (Always first)
-        fast_status_str = "Rising ↗️" if fast_rising else "Falling ↘️"
-        recs.append(f"The Fast Cycle is currently {fast_status_str} (at {int(fast_pos)}%).")
-
-        # B. SLOW CYCLE CONTEXT
-        if cyc_pos < 10:
-            recs.append("The Cyclic component is extremely oversold (Bottoming).")
-        elif cyc_pos > 90:
-            recs.append("The Cyclic component is extremely overbought (Peaking).")
-
-        # C. POSITION NARRATIVE
-        if last_signal == "LONG":
-            base_msg = f"Currently in a LONG position (triggered {days_since_signal} bars ago)."
-            if trend_dir == "Bullish":
-                recs.append(f"{base_msg} This is a TREND-FOLLOWING trade, as the main trend is up.")
-            else:
-                recs.append(f"{base_msg} This is a COUNTER-TREND trade. Be cautious as the main trend is down.")
-
-            # Management Logic (Long)
-            if fast_pos > 80:
-                recs.append("Take note: The Fast Cycle is now Overbought (>80%). Consider taking profits here.")
-                if cyc_pos > 50:
-                    recs.append("Watch out for a possible SHORT entry if the Fast Cycle turns down.")
-            elif not fast_rising and curr_noise > 0:
-                 recs.append("Alert: The Fast Cycle has started falling while positive. This is often a profit-taking zone.")
-
-        elif last_signal == "SHORT":
-            base_msg = f"Currently in a SHORT position (triggered {days_since_signal} bars ago)."
-            if trend_dir == "Bearish":
-                recs.append(f"{base_msg} This is a TREND-FOLLOWING trade, as the main trend is down.")
-            else:
-                recs.append(f"{base_msg} This is a COUNTER-TREND trade. Be cautious as the main trend is up.")
-
-            # Management Logic (Short)
-            if fast_pos < 20:
-                recs.append("Take note: The Fast Cycle is now Oversold (<20%). Consider taking profits here.")
-                if cyc_pos < 50:
-                    recs.append("Watch out for a possible LONG entry if the Fast Cycle turns up.")
-            elif fast_rising and curr_noise < 0:
-                 recs.append("Alert: The Fast Cycle has started rising while negative. This is often a profit-taking zone.")
-        
-        else:
-            recs.append("No active positions were triggered in the last 60 bars.")
-
-        # D. NEUTRAL STATE ADVICE
-        if last_signal == "NEUTRAL" or days_since_signal > 15:
-            if fast_rising and fast_pos < 20 and cyc_pos < 20:
-                recs.append("Setup developing: The market is Oversold. Watch for a Buy trigger soon.")
-            elif not fast_rising and fast_pos > 80 and cyc_pos > 80:
-                recs.append("Setup developing: The market is Overbought. Watch for a Sell trigger soon.")
-
-        response = {
-            "symbol": symbol,
-            "trend": trend_dir,
-            "status": last_signal, 
-            "bars_ago": days_since_signal,
-            "cycle_pct": int(cyc_pos),
-            "fast_pct": int(fast_pos),
-            # Using newlines so the frontend 'pre-line' style renders them nicely
-            "recommendation": "\n".join(recs)
-        }
-        
-        return jsonify(response)
-
-    except Exception as e:
-        print(f"Analysis error: {e}")
-        return jsonify({"error": str(e)}), 500
+    # 5. Build Response
+    response = {
+        "symbol": symbol,
+        "trend": primary_data['trend'],
+        "status": primary_data['status'], 
+        "bars_ago": primary_data['bars_ago'],
+        "cycle_pct": primary_data['cycle_pct'],
+        "fast_pct": primary_data['fast_pct'],
+        "recommendation": "\n".join(recs),
+        "context": htf_results 
+    }
+    
+    return jsonify(response)
 
 @bp.route('/forward-test-results', methods=['GET'])
 @jwt_required()
 def get_forward_results():
-    # Fetch all trades ordered by time desc
     trades = PaperTrade.query.order_by(PaperTrade.entry_time.desc()).all()
-    
-    # Pre-fetch latest prices for active symbols to avoid N+1 queries
-    # We only need this for OPEN trades
     open_symbols = set((t.symbol, t.interval) for t in trades if t.status == 'OPEN')
     latest_prices = {}
     
     for sym, interval in open_symbols:
-        # Get latest closed candle price from DB
         last_candle = MarketData.query.filter_by(symbol=sym, interval=interval)\
             .order_by(MarketData.time.desc()).first()
         if last_candle:
             latest_prices[(sym, interval)] = last_candle.close
 
-    # --- ACCUMULATORS ---
-    # Global Stats
-    global_stats = {
-        'total_pnl': 0.0,
-        'win_count': 0,
-        'loss_count': 0,
-        'total_trades': 0,  # Closed only
-        'open_trades': 0,
-        'sum_wins': 0.0,
-        'sum_losses': 0.0
-    }
-    
-    # Interval Stats: Pre-seed requested intervals, but also allow dynamic ones
-    interval_stats = {
-        k: {'pnl':0.0, 'wins':0, 'closed':0, 'open':0} 
-        for k in ['15min', '1h', '4h'] 
-    }
-
+    global_stats = {'total_pnl': 0.0, 'win_count': 0, 'loss_count': 0, 'total_trades': 0, 'open_trades': 0, 'sum_wins': 0.0, 'sum_losses': 0.0}
+    interval_stats = { k: {'pnl':0.0, 'wins':0, 'closed':0, 'open':0} for k in ['15min', '1h', '4h'] }
     trade_list = []
 
     for t in trades:
-        # --- 1. CALCULATE PNL ---
         final_pnl = t.pnl
         final_pnl_pct = t.pnl_pct
 
@@ -654,7 +565,6 @@ def get_forward_results():
                     final_pnl = (t.entry_price - current_price) * t.quantity
                 final_pnl_pct = (final_pnl / t.invested_amount) * 100
         
-        # --- 2. UPDATE STATISTICS ---
         intv = t.interval
         if intv not in interval_stats:
             interval_stats[intv] = {'pnl':0.0, 'wins':0, 'closed':0, 'open':0}
@@ -667,16 +577,14 @@ def get_forward_results():
             global_stats['total_pnl'] += (t.pnl or 0)
             interval_stats[intv]['closed'] += 1
             interval_stats[intv]['pnl'] += (t.pnl or 0)
-            
             if (t.pnl or 0) > 0:
                 global_stats['win_count'] += 1
                 global_stats['sum_wins'] += t.pnl
                 interval_stats[intv]['wins'] += 1
             else:
                 global_stats['loss_count'] += 1
-                global_stats['sum_losses'] += abs(t.pnl or 0) # Track as positive magnitude
+                global_stats['sum_losses'] += abs(t.pnl or 0)
 
-        # --- 3. BUILD LIST ---
         trade_list.append({
             "id": t.id,
             "symbol": t.symbol,
@@ -693,17 +601,15 @@ def get_forward_results():
             "forecast": t.forecast_snapshot if hasattr(t, 'forecast_snapshot') and t.forecast_snapshot else '-',
             "cycle": t.cycle_snapshot if hasattr(t, 'cycle_snapshot') and t.cycle_snapshot is not None else 0,
             "fast": t.fast_snapshot if hasattr(t, 'fast_snapshot') and t.fast_snapshot is not None else 0,
+            # Add strategy field
+            "strategy": t.strategy if hasattr(t, 'strategy') else 'basic'
         })
 
-    # --- 4. FINALIZE CALCULATIONS ---
-    # Global Averages
     avg_win = global_stats['sum_wins'] / global_stats['win_count'] if global_stats['win_count'] > 0 else 0
     avg_loss = global_stats['sum_losses'] / global_stats['loss_count'] if global_stats['loss_count'] > 0 else 0
     win_rate = (global_stats['win_count'] / global_stats['total_trades'] * 100) if global_stats['total_trades'] > 0 else 0
 
-    # Interval Averages
     final_interval_data = []
-    # Force order: 15min, 1h, 4h, then others
     priority = ['15min', '1h', '4h']
     for k in priority + [x for x in interval_stats.keys() if x not in priority]:
         if k not in interval_stats: continue
@@ -729,3 +635,197 @@ def get_forward_results():
         "intervals": final_interval_data,
         "trades": trade_list
     })
+
+@bp.route('/run-backtest', methods=['POST'])
+@jwt_required()
+def run_backtest_endpoint():
+    data = request.get_json()
+    assets = data.get('assets', []) 
+    interval = data.get('interval', '1day')
+    lookback = int(data.get('lookback', 100))
+    strategy = data.get('strategy', 'BASIC')
+    use_breakeven = data.get('use_breakeven', False)
+    be_atr = float(data.get('be_atr', 2.0))
+    use_tp = data.get('use_tp', False)
+    tp_atr = float(data.get('tp_atr', 5.0))
+    
+    if not assets:
+        return jsonify({"error": "No assets selected"}), 400
+
+    try:
+        trades = backtest_service.run_backtest(
+            assets, interval, lookback,
+            strategy=strategy,
+            use_breakeven=use_breakeven, be_atr_dist=be_atr,
+            use_tp=use_tp, tp_atr_dist=tp_atr
+        )
+        
+        total_pnl = sum(t['pnl'] for t in trades if t['status'] == 'CLOSED')
+        closed_trades = [t for t in trades if t['status'] == 'CLOSED']
+        wins = [t for t in closed_trades if t['pnl'] > 0]
+        losses = [t for t in closed_trades if t['pnl'] <= 0]
+        
+        summary = {
+            "total_pnl": round(total_pnl, 2),
+            "win_rate": round(len(wins) / len(closed_trades) * 100, 1) if closed_trades else 0,
+            "total_trades": len(closed_trades),
+            "open_trades": len(trades) - len(closed_trades),
+            "avg_win": round(sum(t['pnl'] for t in wins) / len(wins), 2) if wins else 0,
+            "avg_loss": round(sum(abs(t['pnl']) for t in losses) / len(losses), 2) if losses else 0
+        }
+        
+        intervals = [{
+            'interval': interval,
+            'pnl': summary['total_pnl'],
+            'win_rate': summary['win_rate'],
+            'open': summary['open_trades'],
+            'closed': summary['total_trades']
+        }]
+
+        return jsonify({
+            "summary": summary,
+            "intervals": intervals,
+            "trades": trades
+        })
+
+    except Exception as e:
+        print(f"Backtest Error: {e}")
+        return jsonify({"error": "Backtest failed during execution"}), 500
+    
+@bp.route('/deep-wave-analyze', methods=['GET'])
+@jwt_required()
+def deep_wave_analyze():
+    symbol = request.args.get('symbol')
+    interval = request.args.get('interval', '1day')
+    
+    # Standard L=39 for deep analysis
+    L = 39 
+
+    if not symbol:
+        return jsonify({"error": "Symbol required"}), 400
+
+    api_key = current_app.config['TWELVE_DATA_API_KEY']
+    ohlc_data = get_historical_data(symbol, interval, api_key, limit=500)
+    
+    if not ohlc_data or len(ohlc_data) < 100:
+        return jsonify({"error": "Insufficient data"}), 400
+
+    df = pd.DataFrame(ohlc_data)
+    close_prices = df['close'].values.flatten()
+    times = df['time'].values.tolist()
+
+    try:
+        # Run Diagnostics
+        diag = ssa_service.get_ssa_diagnostics(close_prices, L)
+        
+        # 1. Trend Analysis (Component 0)
+        trend_series = diag['components'][0]
+        trend_power = diag['contributions'][0]
+        
+        # --- NEW: SMARTER TREND DETECTION ---
+        # Calculate percent change of the trend component over the last 10 bars
+        start_val = trend_series[-10]
+        end_val = trend_series[-1]
+        
+        # Avoid division by zero
+        if start_val == 0: start_val = 0.0001
+            
+        trend_pct_change = abs((end_val - start_val) / start_val) * 100
+        
+        # Logic: True Trends move. Ranges stall.
+        # If the "Trend" component moved less than 0.5% in 10 bars, it's a Range.
+        is_ranging = trend_pct_change < 0.5 
+        
+        if is_ranging:
+            trend_dir = "Sideways / Ranging"
+            # If it's 100% power but Ranging, it's a "Stable Equilibrium"
+            trend_desc = f"The market is in a stable range (High Stability). The 'Trend' component holds {trend_power:.1f}% energy but is flat."
+        else:
+            trend_slope = end_val - start_val
+            trend_dir = "Strongly Bullish" if trend_slope > 0 else "Strongly Bearish"
+            trend_desc = f"The trend explains {trend_power:.1f}% of price movement."
+
+        # 2. Cycle Analysis (Components 1-9)
+        spectrum_data = []
+        for i in range(1, len(diag['contributions'])):
+            spectrum_data.append({
+                "index": i,
+                "power": diag['contributions'][i]
+            })
+
+        # 3. Wave Data for Charting (Top 5 Cycles)
+        waves = []
+        labels = ["Primary Cycle", "Secondary Cycle", "Fast Wave", "Harmonic 1", "Harmonic 2"]
+        colors = ["#00e676", "#2979ff", "#ffeb3b", "#ff9100", "#f50057"]
+        
+        for i in range(1, 6): 
+            if i < len(diag['components']):
+                waves.append({
+                    "name": labels[i-1] if i-1 < len(labels) else f"Comp {i}",
+                    "color": colors[i-1] if i-1 < len(colors) else "#888",
+                    "data": diag['components'][i][-100:] 
+                })
+        
+        # --- FIX: ADDED PRICES TO RESPONSE ---
+        # -------------------------------------
+        
+        # 4. Generate Strategy Text
+        recs = []
+        recs.append(f"**Trend Dominance:** {trend_power:.1f}%")
+        recs.append(f"**Market Structure:** {trend_dir}")
+        
+        if is_ranging and trend_power > 90:
+             recs.append("⚠️ **Anomaly Detected:** Trend power is maximal (>90%) but price is flat. This indicates a 'coiled spring' or low-volatility consolidation. Expect a breakout soon.")
+        
+        # Check Primary Cycle
+        p_cycle = diag['components'][1]
+        p_amp = max(p_cycle[-20:]) - min(p_cycle[-20:])
+        
+        if p_amp < (close_prices[-1] * 0.001): # Amplitude less than 0.1% of price
+             recs.append("Cycles are currently dormant (Low Volatility).")
+        else:
+            if p_cycle[-1] > 0 and p_cycle[-1] > p_cycle[-2]:
+                 recs.append("The **Primary Cycle** is rising (Bullish).")
+            elif p_cycle[-1] > 0 and p_cycle[-1] < p_cycle[-2]:
+                 recs.append("The **Primary Cycle** is topping out.")
+            elif p_cycle[-1] < 0 and p_cycle[-1] < p_cycle[-2]:
+                 recs.append("The **Primary Cycle** is falling (Bearish).")
+            elif p_cycle[-1] < 0 and p_cycle[-1] > p_cycle[-2]:
+                 recs.append("The **Primary Cycle** is bottoming out.")
+
+        # --- FIX: ADDED SYNC CALCULATION ---
+        sync_components = diag['components'][1:6]
+        pos_count = 0
+        neg_count = 0
+        for c in sync_components:
+            if c[-1] > 0: pos_count += 1
+            else: neg_count += 1
+            
+        sync_status = "BEARISH SYNC" if pos_count >= 4 else ("BULLISH SYNC" if neg_count >= 4 else "Neutral / Mixed")
+        sync_color = "#ff3d00" if pos_count >= 4 else ("#00c853" if neg_count >= 4 else "#888")
+
+        response = {
+            "symbol": symbol,
+            "trend": {
+                "power": trend_power,
+                "direction": trend_dir,
+                "description": trend_desc
+            },
+            "sync": { # --- ADDED SYNC OBJECT
+                "status": sync_status,
+                "color": sync_color,
+                "pos_count": pos_count,
+                "neg_count": neg_count
+            },
+            "spectrum": spectrum_data[:15], 
+            "waves": waves,
+            "prices": close_prices[-100:].tolist(), # --- ADDED PRICES
+            "times": times[-100:], 
+            "summary": "\n\n".join(recs)
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"Deep Analysis Error: {e}")
+        return jsonify({"error": str(e)}), 500

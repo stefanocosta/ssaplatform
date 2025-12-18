@@ -60,7 +60,8 @@ const TradingChart = ({
     enableRealtime = false,
     autoUpdate = false,
     showHotspots = false,
-    showForecast = false
+    showForecast = false,
+    strategy = 'BASIC' // NEW PROP
 }) => {
     const chartContainerRef = useRef(null);
     const chartRef = useRef(null);
@@ -68,6 +69,7 @@ const TradingChart = ({
     // Store references to price lines to clear them on updates
     const priceLinesRef = useRef({ cyclic: [], noise: [] });
     const markersInstanceRef = useRef(null);
+    const noiseMarkersRef = useRef(null); // <--- NEW: Ref for Fast Cycle markers
     const resizeObserver = useRef(null);
     const wsRef = useRef(null);
     const realtimeIntervalRef = useRef(null);
@@ -151,12 +153,13 @@ const TradingChart = ({
         }
         return res;
     };
-    const calculateMarkers = (normalizedOhlc, trendRaw, cyclicRaw, noiseRaw) => {
-        if (!normalizedOhlc || !trendRaw || !cyclicRaw || !noiseRaw) return [];
-        const priceMap = new Map(); normalizedOhlc.forEach(d => priceMap.set(d.time, d.close));
-        const trendMap = new Map(); trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
-        const cyclicMap = new Map(); cyclicRaw.forEach(d => cyclicMap.set(normalizeTimestamp(d.time), d.value));
-        const sortedNoise = [...noiseRaw].map(d => ({ ...d, time: normalizeTimestamp(d.time) })).filter(d => d.time).sort((a,b)=>a.time-b.time);
+
+    // ================================================================== //
+    // STRATEGY LOGIC
+    // ================================================================== //
+    
+    // 1. BASIC STRATEGY (Hotspots + Slope)
+    const calculateBasicMarkers = (priceMap, trendMap, cyclicMap, sortedNoise) => {
         const markers = [], used = new Set();
         for (let i = 1; i < sortedNoise.length; i++) {
             const cur = sortedNoise[i], prev = sortedNoise[i-1], time = cur.time;
@@ -171,6 +174,79 @@ const TradingChart = ({
         }
         return markers;
     };
+
+    // 2. FAST STRATEGY (5-Bar Count or Early Reversal)
+    const calculateFastMarkers = (sortedNoise) => {
+        const markers = [];
+        let downCount = 0;
+        let upCount = 0;
+
+        for (let i = 1; i < sortedNoise.length; i++) {
+            const cur = sortedNoise[i];
+            const prev = sortedNoise[i-1];
+            const time = cur.time;
+
+            if (cur.value < 0) {
+                upCount = 0; // Reset up count
+                // Descending
+                if (cur.value < prev.value) {
+                    downCount++;
+                    // Trigger 1: 5th Descending Bar
+                    if (downCount === 5) {
+                        markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'F5', size: 1.5 });
+                    }
+                } 
+                // Ascending (Early Turn)
+                else if (cur.value > prev.value) {
+                    // Trigger 2: Reversal before 5th bar (must have started descending first)
+                    if (downCount > 0 && downCount < 5) {
+                        markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'Rev', size: 1.5 });
+                    }
+                    downCount = 0; // Reset after signal/turn
+                }
+            } 
+            else if (cur.value > 0) {
+                downCount = 0; // Reset down count
+                // Ascending
+                if (cur.value > prev.value) {
+                    upCount++;
+                    // Trigger 1: 5th Ascending Bar
+                    if (upCount === 5) {
+                        markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'F5', size: 1.5 });
+                    }
+                }
+                // Descending (Early Turn)
+                else if (cur.value < prev.value) {
+                    // Trigger 2: Reversal before 5th bar
+                    if (upCount > 0 && upCount < 5) {
+                        markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'Rev', size: 1.5 });
+                    }
+                    upCount = 0;
+                }
+            } else {
+                downCount = 0;
+                upCount = 0;
+            }
+        }
+        return markers;
+    };
+
+    // MAIN CALCULATOR
+    const calculateMarkers = (normalizedOhlc, trendRaw, cyclicRaw, noiseRaw) => {
+        if (!normalizedOhlc || !trendRaw || !cyclicRaw || !noiseRaw) return [];
+        const sortedNoise = [...noiseRaw].map(d => ({ ...d, time: normalizeTimestamp(d.time) })).filter(d => d.time).sort((a,b)=>a.time-b.time);
+        
+        if (strategy === 'FAST') {
+            return calculateFastMarkers(sortedNoise);
+        } else {
+            // Prepare maps for BASIC strategy
+            const priceMap = new Map(); normalizedOhlc.forEach(d => priceMap.set(d.time, d.close));
+            const trendMap = new Map(); trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
+            const cyclicMap = new Map(); cyclicRaw.forEach(d => cyclicMap.set(normalizeTimestamp(d.time), d.value));
+            return calculateBasicMarkers(priceMap, trendMap, cyclicMap, sortedNoise);
+        }
+    };
+
     const updateMarkers = () => {
         if (!lastDataRef.current || !markersInstanceRef.current) return;
         if (showSignals) {
@@ -179,7 +255,9 @@ const TradingChart = ({
             markersInstanceRef.current.setMarkers(calculateMarkers(nOhlc, d.ssa.trend, d.ssa.cyclic, d.ssa.noise));
         } else markersInstanceRef.current.setMarkers([]);
     };
-    useEffect(() => { updateMarkers(); }, [showSignals]);
+    
+    // Re-run marker update when strategy changes
+    useEffect(() => { updateMarkers(); }, [showSignals, strategy]);
 
     // ================================================================== //
     // NEW: DRAW SUPPORT/RESISTANCE LEVELS ON CYCLIC/NOISE PANELS
@@ -268,6 +346,48 @@ const TradingChart = ({
                 const noiseD = mkSeriesData(data.ssa.noise, (p) => p.value<0?'#00FF00':(p.value>0?'#FF0000':'#808080'));
                 if (seriesRefs.current.noise) seriesRefs.current.noise.setData(noiseD);
 
+                // --- NEW: Calculate Markers for Fast Cycle Turning Points ---
+                const cycleMarkers = [];
+                for (let i = 2; i < noiseD.length; i++) {
+                    const current = noiseD[i];
+                    const prev = noiseD[i - 1];
+                    const prevPrev = noiseD[i - 2];
+
+                    const isAscending = current.value > prev.value;
+                    const wasAscending = prev.value > prevPrev.value;
+                    
+                    const isDescending = current.value < prev.value;
+                    const wasDescending = prev.value < prevPrev.value;
+
+                    // First Ascending Bar (Green Arrow Below)
+                    if (isAscending && !wasAscending) {
+                        cycleMarkers.push({
+                            time: current.time,
+                            position: 'belowBar',
+                            color: '#00FF00',
+                            shape: 'arrowUp',
+                            text: '', 
+                            size: 1
+                        });
+                    }
+
+                    // First Descending Bar (Red Arrow Above)
+                    if (isDescending && !wasDescending) {
+                        cycleMarkers.push({
+                            time: current.time,
+                            position: 'aboveBar',
+                            color: '#FF0000',
+                            shape: 'arrowDown',
+                            text: '',
+                            size: 1
+                        });
+                    }
+                }
+                if (noiseMarkersRef.current) {
+                    noiseMarkersRef.current.setMarkers(cycleMarkers);
+                }
+                // -------------------------------------------------------------
+
                 const reconD = [];
                 const trendMap = new Map(trendD.map(x=>[x.time, x.value]));
                 const cyclicMap = new Map(cyclicD.map(x=>[x.time, x.value]));
@@ -346,6 +466,10 @@ const TradingChart = ({
             seriesRefs.current.cyclicZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'cyclic', lineWidth: 4, priceLineVisible: false }, 1);
             
             seriesRefs.current.noise = chart.addSeries(HistogramSeries, { priceScaleId: 'noise', base: 0, priceLineVisible: false }, 2);
+            
+            // --- NEW: Attach Markers for Fast Cycle (Noise) ---
+            noiseMarkersRef.current = createSeriesMarkers(seriesRefs.current.noise, []);
+            
             // --- ATTACH FAST CYCLIC LABEL ---
             seriesRefs.current.noise.attachPrimitive(new SeriesLabelPrimitive('FAST CYCLIC'));
 
@@ -374,7 +498,9 @@ const TradingChart = ({
                 if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
                 seriesRefs.current = {}; 
                 priceLinesRef.current = { cyclic: [], noise: [] };
-                markersInstanceRef.current = null; setChartReady(false);
+                markersInstanceRef.current = null;
+                noiseMarkersRef.current = null; // <--- NEW: Reset
+                setChartReady(false);
             };
         } catch (e) { console.error(e); setError(e.message); setLoading(false); }
     }, [symbol, interval, lValue, useAdaptiveL]);
@@ -472,7 +598,7 @@ const TradingChart = ({
             {!loading && !error && (
                 <>
                     <div style={{ position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 10, color: '#d1d4dc', fontSize: '16px', fontWeight: 'bold', pointerEvents: 'none' }}>
-                        {symbol} ({interval})
+                        {symbol} ({interval}) - {strategy} {/* Update Header to show Strategy */}
                     </div>
                     <button onClick={() => setShowTrend(p => !p)} className={`chart-toggle-button ${showTrend ? 'active' : ''}`} style={{ top: '60px' }}>{showTrend ? 'Trend: ON' : 'Trend: OFF'}</button>
                     <button onClick={() => setShowReconstructed(p => !p)} className={`chart-toggle-button ${showReconstructed ? 'active' : ''}`} style={{ top: '90px' }}>{showReconstructed ? 'Cyclic: ON' : 'Cyclic: OFF'}</button>

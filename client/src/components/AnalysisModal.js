@@ -1,80 +1,103 @@
 import React, { useState, useEffect } from 'react';
-import { X, Activity, TrendingUp, TrendingDown, FileText } from 'lucide-react';
+import { X, Activity, TrendingUp, TrendingDown, FileText, Zap, Clock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import DeepWaveModal from './DeepWaveModal';
 
-// --- NEW COMPONENT: Handles bars that go below 0% or above 100% ---
+const HTFCard = ({ data }) => {
+    const isLong = data.status === 'LONG';
+    const isShort = data.status === 'SHORT';
+    
+    const statusColor = isLong ? '#00c853' : (isShort ? '#ff3d00' : '#888');
+    const cycleColor = data.fast_rising ? '#00c853' : '#ff3d00';
+
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: '#222', borderRadius: '6px', border: '1px solid #333',
+            padding: '8px 12px', marginBottom: '8px'
+        }}>
+            <div style={{display:'flex', alignItems:'center', gap:'6px'}}>
+                <Clock size={14} color="#666"/>
+                <span style={{color:'#fff', fontWeight:'bold', fontSize:'0.85rem'}}>{data.interval}</span>
+            </div>
+            <div style={{
+                fontSize: '0.7rem', fontWeight: 'bold', color: statusColor,
+                border: `1px solid ${statusColor}`, borderRadius: '4px',
+                padding: '1px 6px', minWidth: '50px', textAlign: 'center'
+            }}>
+                {data.status}
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:'4px'}}>
+                <span style={{color: '#aaa', fontSize: '0.7rem'}}>Fast:</span>
+                <span style={{color: cycleColor, fontWeight: 'bold', fontSize: '0.8rem'}}>{data.fast_pct}%</span>
+                {data.fast_rising 
+                    ? <ArrowUpRight size={14} color={cycleColor}/> 
+                    : <ArrowDownRight size={14} color={cycleColor}/>
+                }
+            </div>
+        </div>
+    );
+};
+
 const OscillatorBar = ({ value, color }) => {
-    // 1. Define the visual scale range (e.g. -25 to 125)
-    // This provides 'padding' on the sides for values to overflow standard bounds.
     const MIN_SCALE = -25;
     const MAX_SCALE = 125;
     const TOTAL_RANGE = MAX_SCALE - MIN_SCALE;
 
-    // 2. Helper to convert a value to a CSS percentage position within the container
     const getPosPercent = (val) => {
-        // Clamp visually so it doesn't break the div
         const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, val));
         return ((clamped - MIN_SCALE) / TOTAL_RANGE) * 100;
     };
 
-    const zeroPos = getPosPercent(0);     // The CSS % location of value 0
-    const hundredPos = getPosPercent(100); // The CSS % location of value 100
-    const valuePos = getPosPercent(value); // The CSS % location of the actual value
+    const zeroPos = getPosPercent(0);
+    const hundredPos = getPosPercent(100);
+    const valuePos = getPosPercent(value);
 
-    // 3. Determine Bar Start and Width
-    // If value is positive, bar starts at 0 and goes right.
-    // If value is negative, bar starts at value and goes right to 0.
     const barLeft = value >= 0 ? zeroPos : valuePos;
     const barWidth = Math.abs(valuePos - zeroPos);
 
     return (
         <div style={{ position: 'relative', width: '100%', height: '20px', marginTop: '2px' }}>
-            {/* Background Track */}
             <div style={{ 
                 width: '100%', height: '6px', background: '#333', borderRadius: '3px', 
                 position: 'absolute', top: '7px', overflow: 'hidden' 
             }}>
-                {/* The Filled Bar */}
                 <div style={{ 
-                    position: 'absolute',
-                    left: `${barLeft}%`,
-                    width: `${barWidth}%`,
-                    height: '100%',
-                    background: color,
-                    transition: 'all 0.5s ease-out',
-                    // Optional: Add a subtle glow if it's overflowing extremes
+                    position: 'absolute', left: `${barLeft}%`, width: `${barWidth}%`, height: '100%',
+                    background: color, transition: 'all 0.5s ease-out',
                     boxShadow: value > 100 || value < 0 ? `0 0 5px ${color}` : 'none'
                 }} />
             </div>
-
-            {/* Marker for 0% */}
-            <div style={{ 
-                position: 'absolute', left: `${zeroPos}%`, top: '2px', bottom: '2px', 
-                width: '1px', background: '#666', zIndex: 2 
-            }}>
+            <div style={{ position: 'absolute', left: `${zeroPos}%`, top: '2px', bottom: '2px', width: '1px', background: '#666', zIndex: 2 }}>
                 <div style={{ fontSize: '0.5rem', color: '#666', position: 'absolute', top: '-10px', left: '-50%', transform: 'translateX(-2px)' }}>0</div>
             </div>
-
-            {/* Marker for 100% */}
-            <div style={{ 
-                position: 'absolute', left: `${hundredPos}%`, top: '2px', bottom: '2px', 
-                width: '1px', background: '#666', zIndex: 2 
-            }}>
+            <div style={{ position: 'absolute', left: `${hundredPos}%`, top: '2px', bottom: '2px', width: '1px', background: '#666', zIndex: 2 }}>
                 <div style={{ fontSize: '0.5rem', color: '#666', position: 'absolute', top: '-10px', left: '-50%', transform: 'translateX(-4px)' }}>100</div>
             </div>
         </div>
     );
 };
 
-const AnalysisModal = ({ symbol, interval, onClose }) => {
+const AnalysisModal = ({ symbol, interval, strategy, onClose }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+    
+    // Persistent State
+    const [showDeepWave, setShowDeepWave] = useState(() => {
+        return sessionStorage.getItem('keepDeepWaveOpen') === 'true';
+    });
 
     useEffect(() => {
-        const handleResize = () => {
-            setIsMobile(window.innerWidth < 768);
-        };
+        sessionStorage.setItem('keepDeepWaveOpen', showDeepWave);
+    }, [showDeepWave]);
 
+    const handleMainClose = () => {
+        sessionStorage.setItem('keepDeepWaveOpen', 'false'); 
+        onClose();
+    };
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener('resize', handleResize);
 
         const fetchAnalysis = async () => {
@@ -82,7 +105,7 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
             const token = localStorage.getItem('access_token');
             try {
                 const safeSymbol = encodeURIComponent(symbol);
-                const response = await fetch(`/api/analyze?symbol=${safeSymbol}&interval=${interval}`, {
+                const response = await fetch(`/api/analyze?symbol=${safeSymbol}&interval=${interval}&strategy=${strategy}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const result = await response.json();
@@ -98,7 +121,7 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
         if (symbol) fetchAnalysis();
 
         return () => window.removeEventListener('resize', handleResize);
-    }, [symbol, interval]);
+    }, [symbol, interval, strategy]);
 
     const getPctColor = (val) => {
         if (val >= 80) return '#ef5350'; 
@@ -135,9 +158,9 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
             }}>
                 <h2 style={{ color: '#d1d4dc', margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Activity size={18} color="#0078d4"/>
-                    Deep Analysis
+                    Deep Analysis <span style={{fontSize: '0.7rem', color: '#ff9800', border: '1px solid #ff980044', padding: '1px 4px', borderRadius: '3px', marginLeft: '5px'}}>{strategy?.toUpperCase()}</span>
                 </h2>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer' }}><X size={20} /></button>
+                <button onClick={handleMainClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer' }}><X size={20} /></button>
             </div>
 
             <div style={{ padding: '20px' }}>
@@ -149,14 +172,13 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                 ) : data ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                         
-                        {/* ASSET INFO */}
+                        {/* 1. ASSET HEADER */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
                             <div>
                                 <div style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem' }}>{data.symbol}</div>
-                                <div style={{ color: '#888', fontSize: '0.8rem' }}>Interval: {interval}</div>
+                                <div style={{ color: '#888', fontSize: '0.8rem' }}>Current: {interval}</div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                                <div style={{ color: '#888', fontSize: '0.75rem', marginBottom: '4px' }}>CURRENT STATUS</div>
                                 <div style={{ 
                                     color: getStatusColor(data.status), 
                                     fontWeight: 'bold', 
@@ -168,7 +190,19 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                             </div>
                         </div>
 
-                        {/* STATS GRID */}
+                        {/* 2. MARKET CONTEXT (NEW SECTION) */}
+                        {data.context && data.context.length > 0 && (
+                            <div>
+                                <div style={{ color: '#888', fontSize: '0.7rem', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Higher Timeframe Context
+                                </div>
+                                {data.context.map((ctx, idx) => (
+                                    <HTFCard key={idx} data={ctx} />
+                                ))}
+                            </div>
+                        )}
+
+                        {/* 3. STATS GRID */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                             <div style={{ background: '#2a2a2a', padding: '10px', borderRadius: '6px' }}>
                                 <div style={{ color: '#888', fontSize: '0.7rem' }}>TREND</div>
@@ -185,13 +219,12 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                             </div>
                         </div>
 
-                        {/* CYCLES SECTION (UPDATED) */}
+                        {/* 4. OSCILLATORS */}
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0px', fontSize: '0.8rem', color: '#ccc' }}>
                                 <span>Cyclic</span>
                                 <span style={{ color: getPctColor(data.cycle_pct) }}>{data.cycle_pct}%</span>
                             </div>
-                            {/* Replaced simple bar with OscillatorBar */}
                             <OscillatorBar value={data.cycle_pct} color={getPctColor(data.cycle_pct)} />
                         </div>
 
@@ -200,12 +233,11 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                                 <span>Fast Cyclic</span>
                                 <span style={{ color: getPctColor(data.fast_pct) }}>{data.fast_pct}%</span>
                             </div>
-                            {/* Replaced simple bar with OscillatorBar */}
                             <OscillatorBar value={data.fast_pct} color={getPctColor(data.fast_pct)} />
                         </div>
 
-                        {/* RECOMMENDATION TEXT */}
-                        <div style={{ background: 'rgba(0, 120, 212, 0.1)', borderLeft: '3px solid #0078d4', padding: '10px', borderRadius: '0 6px 6px 0', marginTop: '10px' }}>
+                        {/* 5. RECOMMENDATION */}
+                        <div style={{ background: 'rgba(0, 120, 212, 0.1)', borderLeft: '3px solid #0078d4', padding: '10px', borderRadius: '0 6px 6px 0', marginTop: '5px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0078d4', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>
                                 <FileText size={16} /> Recommendation
                             </div>
@@ -213,6 +245,23 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                                 {data.recommendation}
                             </p>
                         </div>
+
+                        {/* DEEP WAVE LAB BUTTON */}
+                        <button 
+                            onClick={() => setShowDeepWave(true)}
+                            style={{
+                                width: '100%', padding: '12px',
+                                background: 'linear-gradient(45deg, #1e1e1e, #333)',
+                                border: '1px solid #555', borderRadius: '6px',
+                                color: '#fff', fontSize: '0.9rem', fontWeight: 'bold',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+                                marginTop: '5px'
+                            }}
+                        >
+                            <Zap size={16} fill="#ffd700" color="#ffd700"/> Launch Deep Wave Lab
+                        </button>
+
                     </div>
                 ) : null}
             </div>
@@ -233,6 +282,15 @@ const AnalysisModal = ({ symbol, interval, onClose }) => {
                 </div>
             )}
             
+            {/* RENDER DEEP WAVE MODAL */}
+            {showDeepWave && (
+                <DeepWaveModal 
+                    symbol={symbol} 
+                    interval={interval} 
+                    onClose={() => setShowDeepWave(false)} 
+                />
+            )}
+
             <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } } .animate-spin { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
         </div>
     );
