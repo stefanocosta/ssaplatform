@@ -22,7 +22,7 @@ class Config:
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'super-secret-jwt-key' 
     JWT_TOKEN_LOCATION = ['headers'] # Tokens will be sent in the Authorization header
     # Set the token to expire after 30 minutes of inactivity, for example
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
 
         # Ensure JWT_SECRET_KEY is set or the app won't run securely
     if not JWT_SECRET_KEY:

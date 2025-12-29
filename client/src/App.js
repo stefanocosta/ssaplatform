@@ -10,7 +10,41 @@ import TestModal from './components/TestModal';
 import MonitorModal from './components/MonitorModal'; 
 import './App.css';
 
-// ... (AlertPopup component remains unchanged) ...
+// ================================================================== //
+// CUSTOM HOOK: IDLE LOGOUT (15 MIN TIMEOUT)
+// ================================================================== //
+const useIdleLogout = (timeoutMinutes = 30, onLogout) => {
+  useEffect(() => {
+    let timer;
+    
+    const resetTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        console.log("User idle for too long. Logging out...");
+        onLogout();
+      }, timeoutMinutes * 60 * 1000);
+    };
+
+    // Events that count as "activity"
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    
+    // Attach listeners
+    events.forEach(event => document.addEventListener(event, resetTimer));
+    
+    // Start the timer initially
+    resetTimer();
+
+    // Cleanup
+    return () => {
+      if (timer) clearTimeout(timer);
+      events.forEach(event => document.removeEventListener(event, resetTimer));
+    };
+  }, [timeoutMinutes, onLogout]);
+};
+
+// ================================================================== //
+// ALERT POPUP COMPONENT
+// ================================================================== //
 const AlertPopup = ({ alerts, onClose }) => {
     useEffect(() => {
         const timer = setTimeout(() => { onClose(); }, 60000);
@@ -35,6 +69,9 @@ const AlertPopup = ({ alerts, onClose }) => {
     );
 };
 
+// ================================================================== //
+// MAIN PLATFORM COMPONENT
+// ================================================================== //
 function Platform() {
   const [inputSymbol, setInputSymbol] = useState('BTC/USD'); 
   const [inputCustomSymbol, setInputCustomSymbol] = useState(''); 
@@ -73,6 +110,16 @@ function Platform() {
     'Stocks': ['AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
   };
 
+  // --- ACTIVATE IDLE TIMER ---
+  const handleIdleLogout = () => {
+     // Clear data and force reload to show Login Screen
+     localStorage.clear();
+     window.location.reload(); 
+  };
+  
+  // 15 Minutes Timeout
+  useIdleLogout(15, handleIdleLogout);
+
   useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 768);
       window.addEventListener('resize', handleResize);
@@ -105,7 +152,6 @@ function Platform() {
           {/* 1. INPUTS */}
           <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span>
-                <label style={{ marginRight: '5px' }}>Sym:</label>
                 <select value={inputSymbol} onChange={handleSymbolChange} style={{ padding: '5px', backgroundColor: '#3c3c3c', color: 'white', border: '1px solid #555', maxWidth: '100px' }}>
                 {Object.keys(assetCategories).map(cat => (
                     <optgroup key={cat} label={cat}>
@@ -166,7 +212,6 @@ function Platform() {
           }}>
             <button onClick={() => setShowTestModal(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#00c853', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><FlaskConical size={16} /> Test</button>
             
-            {/* FIX: MON Button just opens modal. Styling reflects active state. */}
             <button 
                 onClick={() => setShowMonitorModal(true)} 
                 className={isMonitoring ? 'flashing-monitor' : ''} 
@@ -206,14 +251,13 @@ function Platform() {
         {showAnalysis && <AnalysisModal symbol={finalSymbol} interval={inputInterval} strategy={inputStrategy} onClose={() => setShowAnalysis(false)} />}
         {showTestModal && <TestModal onClose={() => setShowTestModal(false)} />}
         
-        {/* FIX: Render MonitorModal ALWAYS. Pass 'isOpen' to control visibility. */}
         <MonitorModal 
             isOpen={showMonitorModal}
             onClose={() => setShowMonitorModal(false)} 
             onOpen={() => setShowMonitorModal(true)}
             strategy={inputStrategy} 
             onSelectAsset={setInputSymbol}
-            onStatusChange={setIsMonitoring} // Update App state when monitor starts/stops
+            onStatusChange={setIsMonitoring} 
         />
 
       </div>
