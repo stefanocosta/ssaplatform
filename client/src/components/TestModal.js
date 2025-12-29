@@ -317,7 +317,7 @@ const TestModal = ({ onClose }) => {
     const [btTpAtr, setBtTpAtr] = useState(5.0);
 
     // --- FILTERS (Forward Only) ---
-    const [filterStrategy, setFilterStrategy] = useState('BASIC_S'); // Default to new system
+    const [filterStrategy, setFilterStrategy] = useState('BASIC'); // Default to new system
     const [filterIntervals, setFilterIntervals] = useState(new Set()); // CHANGED: Set for multi-select
     const [filterStatus, setFilterStatus] = useState('ALL');    
     const [filterDirection, setFilterDirection] = useState('ALL'); 
