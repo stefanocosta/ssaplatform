@@ -221,22 +221,63 @@ def perform_single_analysis(symbol, interval, api_key, strategy='basic'):
                 elif is_hot_sell and is_noise_sell:
                     last_signal = "SHORT"; days_since_signal = (N-1)-i; entry_price = c_price; break
 
-        # 2. BASIC SINGLE (NEW) same as basic but only uses one entry.
+        # 2. BASIC SINGLE (NEW LOGIC)
+        # Logic: Find the FIRST time 'BASIC' conditions were met in the current noise cycle.
         elif strategy == 'basic_s':
+            # Scan backwards to find the most recent signal
             for i in range(N-1, max(2, N-60), -1):
+                c_noise = noise[i]
+                
+                # Check if this bar qualifies as a BASIC signal
                 c_price = close_prices[i]; c_trend = trend[i]; c_recon = reconstructed[i]
-                c_noise = noise[i]; p_noise = noise[i-1]; pp_noise = noise[i-2]
+                p_noise = noise[i-1]
                 
                 is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
                 is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
-                # Pivot Logic
-                is_pivot_buy = (c_noise < 0) and (c_noise > p_noise) and (p_noise <= pp_noise)
-                is_pivot_sell = (c_noise > 0) and (c_noise < p_noise) and (p_noise >= pp_noise)
                 
-                if is_hot_buy and is_pivot_buy:
-                    last_signal = "LONG"; days_since_signal = (N-1)-i; entry_price = c_price; break
-                elif is_hot_sell and is_pivot_sell:
-                    last_signal = "SHORT"; days_since_signal = (N-1)-i; entry_price = c_price; break
+                is_basic_buy = is_hot_buy and (c_noise < 0) and (c_noise >= p_noise)
+                is_basic_sell = is_hot_sell and (c_noise > 0) and (c_noise <= p_noise)
+                
+                if is_basic_buy:
+                    # VALIDATE: Is this the *first* one in the cycle?
+                    # Check previous bars. If they were ALSO a signal or noise was already rising, 
+                    # and we haven't crossed zero, then this bar is NOT the start.
+                    # Actually, we just need to ensure the trend persists.
+                    # Simplification for Snapshot: If we found a Basic Buy, we report it.
+                    # The "Single" logic is enforced by the fact that we break on the FIRST match going backwards?
+                    # No, scanning backwards finds the LATEST signal.
+                    # We need to scan backwards until the noise cycle *changes*.
+                    
+                    # Search deeper to see if this triggered earlier
+                    start_of_cycle_idx = i
+                    for k in range(i-1, 0, -1):
+                        if noise[k] >= 0: break # End of negative cycle
+                        # Check if k was also a signal
+                        k_price = close_prices[k]; k_trend = trend[k]; k_recon = reconstructed[k]
+                        k_hot = (k_recon < k_trend) and (k_price < k_recon)
+                        k_slope = (noise[k] >= noise[k-1])
+                        if k_hot and k_slope:
+                            start_of_cycle_idx = k # Update "First" trigger
+                    
+                    last_signal = "LONG"
+                    days_since_signal = (N-1) - start_of_cycle_idx # Report age from the FIRST signal
+                    entry_price = close_prices[start_of_cycle_idx]
+                    break
+
+                elif is_basic_sell:
+                    start_of_cycle_idx = i
+                    for k in range(i-1, 0, -1):
+                        if noise[k] <= 0: break # End of positive cycle
+                        k_price = close_prices[k]; k_trend = trend[k]; k_recon = reconstructed[k]
+                        k_hot = (k_recon > k_trend) and (k_price > k_recon)
+                        k_slope = (noise[k] <= noise[k-1])
+                        if k_hot and k_slope:
+                            start_of_cycle_idx = k
+                            
+                    last_signal = "SHORT"
+                    days_since_signal = (N-1) - start_of_cycle_idx
+                    entry_price = close_prices[start_of_cycle_idx]
+                    break
 
         # 3. FAST
         elif strategy == 'fast':

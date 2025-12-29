@@ -36,7 +36,7 @@ def run_forward_test(interval, api_key=None):
     interval_mins = get_interval_minutes(interval)
     max_delay_minutes = interval_mins + 20 
     
-    strategies_to_test = ['basic', 'basic_s', 'fast'] # Loop both strategies
+    strategies_to_test = ['basic', 'basic_s', 'fast'] 
 
     for symbol in TRACKED_ASSETS:
         ohlc = get_historical_data_from_db(symbol, interval, limit=500)
@@ -56,6 +56,9 @@ def run_forward_test(interval, api_key=None):
         
         # --- LOOP STRATEGIES ---
         for strategy in strategies_to_test:
+            
+            # FIX: We now trust 'basic_s' logic in signal_engine to handle the "First Entry" check.
+            # No need to override it to 'basic'.
             result = analyze_market_snapshot(closes, strategy=strategy)
             
             if not result or not result['signal']: continue 
@@ -68,9 +71,23 @@ def run_forward_test(interval, api_key=None):
                 'forecast': result['forecast_dir'],
                 'cycle': result['cycle_pct'],
                 'fast': result['fast_pct'],
-                'strategy': strategy # Pass strategy to handler, Saves as 'basic', 'basic_single', or 'fast'
+                'strategy': strategy
             }
             
+            # --- SAFETY CHECK ---
+            # Even though signal_engine filters repeats, we double-check DB 
+            # to ensure we don't open duplicate positions for the same asset/strategy.
+            if signal == 'BUY':
+                existing = PaperTrade.query.filter_by(
+                    symbol=symbol, interval=interval, direction='LONG', status='OPEN', strategy=strategy
+                ).first()
+                if existing: continue 
+            elif signal == 'SELL':
+                existing = PaperTrade.query.filter_by(
+                    symbol=symbol, interval=interval, direction='SHORT', status='OPEN', strategy=strategy
+                ).first()
+                if existing: continue 
+
             print(f"   ⚡ {strategy.upper()} SIGNAL: {symbol} {signal} @ {price}")
 
             if signal == 'BUY':
@@ -97,7 +114,7 @@ def handle_buy_signal(symbol, interval, price, time, snapshot):
         forecast_snapshot=snapshot['forecast'],
         cycle_snapshot=snapshot['cycle'],
         fast_snapshot=snapshot['fast'],
-        strategy=strat # Save Strategy
+        strategy=strat 
     )
     db.session.add(new_trade)
     db.session.commit()
@@ -121,7 +138,7 @@ def handle_sell_signal(symbol, interval, price, time, snapshot):
         forecast_snapshot=snapshot['forecast'],
         cycle_snapshot=snapshot['cycle'],
         fast_snapshot=snapshot['fast'],
-        strategy=strat # Save Strategy
+        strategy=strat 
     )
     db.session.add(new_trade)
     db.session.commit()

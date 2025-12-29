@@ -29,10 +29,10 @@ def analyze_market_snapshot(close_prices, L_param=30, use_adaptive=True, strateg
         curr_trend = trend[-1]
         prev_trend = trend[-2]
         
+        # Current Bar Values
         curr_recon = reconstructed[-1]
         curr_noise = noise[-1]
         prev_noise = noise[-2]
-        prev_prev_noise = noise[-3] if N > 2 else 0
         
         cyc_pos = calculate_cycle_position(cyclic)
         fast_pos = calculate_cycle_position(noise)
@@ -60,17 +60,57 @@ def analyze_market_snapshot(close_prices, L_param=30, use_adaptive=True, strateg
             if is_hot_buy and is_noise_buy: signal = "BUY"
             elif is_hot_sell and is_noise_sell: signal = "SELL"
 
-        # 2. BASIC SINGLE (New Pivot Logic)
+        # 2. BASIC SINGLE (Fixed: First Valid Entry Logic)
         elif strategy == 'basic_s':
+            # A. Check if CURRENT bar meets Basic criteria (Slope + Hotspot)
             is_hot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
+            is_slope_buy = (curr_noise < 0) and (curr_noise >= prev_noise)
+            
             is_hot_sell = (curr_recon > curr_trend) and (curr_price > curr_recon)
+            is_slope_sell = (curr_noise > 0) and (curr_noise <= prev_noise)
             
-            # Strict Pivot check (V-Shape)
-            is_pivot_buy = (curr_noise < 0) and (curr_noise > prev_noise) and (prev_noise <= prev_prev_noise)
-            is_pivot_sell = (curr_noise > 0) and (curr_noise < prev_noise) and (prev_noise >= prev_prev_noise)
-            
-            if is_hot_buy and is_pivot_buy: signal = "BUY"
-            elif is_hot_sell and is_pivot_sell: signal = "SELL"
+            if is_hot_buy and is_slope_buy:
+                # B. Validation: Is this the FIRST signal in the current noise cycle?
+                is_first = True
+                # Loop backward from previous bar (N-2)
+                for k in range(N-2, 0, -1):
+                    k_noise = noise[k]
+                    # Stop if we exit the negative cycle
+                    if k_noise >= 0: break 
+                    
+                    # Check if bar 'k' was ALSO a signal
+                    k_price = close_prices[k]; k_trend = trend[k]; k_recon = reconstructed[k]
+                    k_prev_noise = noise[k-1]
+                    
+                    k_hot = (k_recon < k_trend) and (k_price < k_recon)
+                    k_slope = (k_noise >= k_prev_noise)
+                    
+                    if k_hot and k_slope:
+                        # Found an earlier signal in the same cycle -> This is NOT the first
+                        is_first = False
+                        break
+                
+                if is_first: signal = "BUY"
+
+            elif is_hot_sell and is_slope_sell:
+                is_first = True
+                # Loop backward from previous bar (N-2)
+                for k in range(N-2, 0, -1):
+                    k_noise = noise[k]
+                    # Stop if we exit the positive cycle
+                    if k_noise <= 0: break 
+                    
+                    k_price = close_prices[k]; k_trend = trend[k]; k_recon = reconstructed[k]
+                    k_prev_noise = noise[k-1]
+                    
+                    k_hot = (k_recon > k_trend) and (k_price > k_recon)
+                    k_slope = (k_noise <= k_prev_noise)
+                    
+                    if k_hot and k_slope:
+                        is_first = False
+                        break
+                
+                if is_first: signal = "SELL"
                 
         # 3. FAST (Momentum Logic)
         elif strategy == 'fast':

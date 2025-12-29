@@ -7,91 +7,96 @@ sys.path.append(os.getcwd())
 
 from app import create_app, db
 from app.models import PaperTrade
+from app.services.backtest_service import run_backtest
+from app.services.data_manager import TRACKED_ASSETS
 
 app = create_app()
 
 def backfill_strategies():
     with app.app_context():
-        print("🔄 Starting Backfill: Creating 'basic_s' history from existing 'basic' data...")
+        print("\n" + "="*60)
+        print("🔄 Starting Granular Backfill for 'basic_s'")
+        print("   Logic: Single Entry per Fast Cycle (First Valid)")
+        print("="*60 + "\n")
 
-        # 1. Fetch all existing BASIC trades
-        # We assume any trade with strategy='basic' (or null, which defaults to basic) is our source
-        all_basic_trades = PaperTrade.query.filter(
-            (PaperTrade.strategy == 'basic') | (PaperTrade.strategy == None)
-        ).order_by(
-            PaperTrade.symbol, 
-            PaperTrade.interval, 
-            PaperTrade.entry_time.asc()
-        ).all()
+        # 1. CLEANUP
+        print("1. Cleaning old data...")
+        deleted = PaperTrade.query.filter_by(strategy='basic_s').delete()
+        db.session.commit()
+        print(f"   🗑️  Cleared {deleted} existing 'basic_s' records.\n")
 
-        print(f"   📉 Found {len(all_basic_trades)} existing 'basic' trades to process.")
+        intervals = ['15min', '1h', '4h']
+        total_global = 0
 
-        new_trades_to_add = []
-        
-        # Group by Symbol + Interval to process sequences correctly
-        # Structure: { "BTC/USD-15min": [trade1, trade2...], ... }
-        grouped_trades = {}
-        for trade in all_basic_trades:
-            key = f"{trade.symbol}-{trade.interval}"
-            if key not in grouped_trades:
-                grouped_trades[key] = []
-            grouped_trades[key].append(trade)
-
-        # 2. Process each group to find the "Pivots" (Single Entries)
-        count_created = 0
-        
-        for key, trades in grouped_trades.items():
-            last_direction = None
+        # 2. RUN BACKTEST PER ASSET
+        for interval in intervals:
+            print(f"📊 Processing Interval: {interval}")
+            print("-" * 40)
             
-            for trade in trades:
-                # LOGIC:
-                # If the direction changes (e.g. None -> LONG, or SHORT -> LONG), 
-                # this is the "Pivot" / "First Entry". We keep it.
-                # If direction is same (LONG -> LONG), it's an "Add-on". We skip it.
+            count_for_interval = 0
+            
+            for i, symbol in enumerate(TRACKED_ASSETS, 1):
+                # Print progress without newline initially
+                sys.stdout.write(f"   [{i}/{len(TRACKED_ASSETS)}] {symbol:<10} ... ")
+                sys.stdout.flush()
                 
-                if trade.direction != last_direction:
-                    # This is a PIVOT trade. Duplicate it for 'basic_single'
-                    
-                    new_trade = PaperTrade(
-                        symbol=trade.symbol,
-                        interval=trade.interval,
-                        direction=trade.direction,
-                        status=trade.status,
-                        strategy='basic_s', # <--- The New Strategy Name
-                        
-                        entry_time=trade.entry_time,
-                        entry_price=trade.entry_price,
-                        invested_amount=trade.invested_amount,
-                        quantity=trade.quantity,
-                        
-                        exit_time=trade.exit_time,
-                        exit_price=trade.exit_price,
-                        pnl=trade.pnl,
-                        pnl_pct=trade.pnl_pct,
-                        
-                        trend_snapshot=trade.trend_snapshot,
-                        forecast_snapshot=trade.forecast_snapshot,
-                        cycle_snapshot=trade.cycle_snapshot,
-                        fast_snapshot=trade.fast_snapshot
+                try:
+                    # Run backtest for just THIS symbol
+                    trades = run_backtest(
+                        assets=[symbol], 
+                        interval=interval, 
+                        lookback_bars=500, 
+                        strategy='BASIC_S'
                     )
                     
-                    new_trades_to_add.append(new_trade)
-                    last_direction = trade.direction
-                    count_created += 1
-                else:
-                    # This is a continuation trade (multiple entry). 
-                    # The 'basic_single' strategy ignores these.
-                    pass
+                    # Convert to DB objects
+                    db_objects = []
+                    for t in trades:
+                        if not t.get('entry_date'): continue
+                        try:
+                            entry_dt = datetime.strptime(t['entry_date'], "%Y-%m-%d %H:%M")
+                            exit_dt = datetime.strptime(t['exit_date'], "%Y-%m-%d %H:%M") if t['exit_date'] != '-' else None
+                        except ValueError:
+                            continue
 
-        # 3. Batch Insert
-        if new_trades_to_add:
-            print(f"   💾 Saving {len(new_trades_to_add)} new 'basic_s' trades to DB...")
-            # Use bulk_save_objects for speed if list is huge, but add_all is safer for signals
-            db.session.add_all(new_trades_to_add)
-            db.session.commit()
-            print("   ✅ Success! History populated.")
-        else:
-            print("   ⚠️ No trades generated. Check if 'basic' data exists.")
+                        new_trade = PaperTrade(
+                            symbol=t['symbol'],
+                            interval=t['interval'],
+                            direction=t['direction'],
+                            status=t['status'],
+                            strategy='basic_s',
+                            entry_time=entry_dt,
+                            entry_price=t['entry_price'],
+                            invested_amount=t['invested'],
+                            quantity=t['quantity'],
+                            exit_time=exit_dt,
+                            exit_price=t['exit_price'],
+                            pnl=t['pnl'],
+                            pnl_pct=t['pnl_pct'],
+                            trend_snapshot=t.get('trend', '-'),
+                            forecast_snapshot=t.get('forecast', '-'),
+                            cycle_snapshot=t.get('cycle', 0),
+                            fast_snapshot=t.get('fast', 0)
+                        )
+                        db_objects.append(new_trade)
+                    
+                    if db_objects:
+                        db.session.add_all(db_objects)
+                        db.session.commit()
+                        count_for_interval += len(db_objects)
+                        print(f"✅ Added {len(db_objects)} trades")
+                    else:
+                        print("⚪ No trades found")
+                        
+                except Exception as e:
+                    print(f"❌ Error: {str(e)}")
+
+            print(f"   --> Finished {interval}. Total trades: {count_for_interval}\n")
+            total_global += count_for_interval
+
+        print("="*60)
+        print(f"✅ BACKFILL COMPLETE! Total 'basic_s' trades created: {total_global}")
+        print("="*60)
 
 if __name__ == "__main__":
     backfill_strategies()

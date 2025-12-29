@@ -7,7 +7,6 @@ from app.services.signal_engine import analyze_market_snapshot
 
 # CONFIG
 SSA_WINDOW = 500  
-INVESTMENT_AMOUNT = 10000.0
 ATR_PERIOD = 14
 
 def calculate_atr(highs, lows, closes, period=14):
@@ -37,7 +36,10 @@ def run_backtest(assets, interval, lookback_bars, strategy='BASIC',
     - Strategies: 'BASIC' vs 'FAST'
     - Management: Breakeven Stop & Take Profit (ATR based)
     """
-    print(f"🚀 [Backtest] {strategy} | BE:{use_breakeven}({be_atr_dist}) | TP:{use_tp}({tp_atr_dist})")
+    # UNIFIED CAPITAL: Always 1000.0 for all strategies (Basic, Basic_S, Fast)
+    invested_amount = 1000.0 
+    
+    print(f"🚀 [Backtest] {strategy} | Capital: ${invested_amount} | BE:{use_breakeven}({be_atr_dist}) | TP:{use_tp}({tp_atr_dist})")
     
     all_trades = []
     trade_id_counter = 1
@@ -94,8 +96,11 @@ def run_backtest(assets, interval, lookback_bars, strategy='BASIC',
         fast_up_count = 0
         fast_down_count = 0
         
-        # [CRITICAL FIX] Persist the previously calculated noise 
-        # so we don't rely on DB 'prev_row' being populated in fallback mode.
+        # BASIC_S STATE
+        # Tracks if we have already fired a trade in the current noise cycle
+        basic_s_fired_buy = False
+        basic_s_fired_sell = False
+        
         last_iter_noise = 0.0 
 
         for i in range(SSA_WINDOW, len(history_data)):
@@ -170,6 +175,25 @@ def run_backtest(assets, interval, lookback_bars, strategy='BASIC',
                 
                 if is_hot_buy and is_noise_buy: signal = "BUY"
                 elif is_hot_sell and is_noise_sell: signal = "SELL"
+
+            elif strategy == 'BASIC_S':
+                # Reset Flags on Zero Cross
+                if curr_noise >= 0: basic_s_fired_buy = False
+                if curr_noise <= 0: basic_s_fired_sell = False
+                
+                is_hot_buy = (curr_recon < curr_trend) and (curr_price < curr_recon)
+                is_hot_sell = (curr_recon > curr_trend) and (curr_price > curr_recon)
+                
+                # Same entry logic as BASIC (Slope), but gated by flag
+                is_noise_buy = (curr_noise < 0) and (curr_noise >= prev_noise)
+                is_noise_sell = (curr_noise > 0) and (curr_noise <= prev_noise)
+                
+                if is_hot_buy and is_noise_buy and not basic_s_fired_buy:
+                    signal = "BUY"
+                    basic_s_fired_buy = True # LOCK
+                elif is_hot_sell and is_noise_sell and not basic_s_fired_sell:
+                    signal = "SELL"
+                    basic_s_fired_sell = True # LOCK
                 
             elif strategy == 'FAST':
                 if curr_noise < 0:
@@ -273,8 +297,8 @@ def run_backtest(assets, interval, lookback_bars, strategy='BASIC',
                     'status': 'OPEN',
                     'entry_date': row['time'].strftime("%Y-%m-%d %H:%M"),
                     'entry_price': row['close'],
-                    'invested': INVESTMENT_AMOUNT,
-                    'quantity': INVESTMENT_AMOUNT / row['close'],
+                    'invested': invested_amount,
+                    'quantity': invested_amount / row['close'],
                     'trend': trend_dir,
                     'forecast': forecast_dir,
                     'cycle': cycle_pos,

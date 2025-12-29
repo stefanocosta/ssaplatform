@@ -187,27 +187,43 @@ const TradingChart = ({
         return markers;
     };
 
-    // 2. BASIC SINGLE - Single Entry on Pivot (V-Shape)
+    // 2. BASIC SINGLE - Single Entry Per Cycle (First Valid Signal)
     const calculateBasicSingleMarkers = (priceMap, trendMap, cyclicMap, sortedNoise) => {
-        const markers = [], used = new Set();
-        // Need i-2 for pivot check, start at 2
-        for (let i = 2; i < sortedNoise.length; i++) {
+        const markers = [];
+        let hasFiredBuy = false;
+        let hasFiredSell = false;
+
+        for (let i = 1; i < sortedNoise.length; i++) {
             const cur = sortedNoise[i];
             const prev = sortedNoise[i-1];
-            const prevPrev = sortedNoise[i-2];
             const time = cur.time;
 
             const price = priceMap.get(time), trend = trendMap.get(time), cyclic = cyclicMap.get(time);
-            if (price===undefined || trend===undefined || cyclic===undefined || used.has(time)) continue;
+            if (price === undefined || trend === undefined || cyclic === undefined) continue;
+            
             const recon = trend + cyclic;
             
-            // BUY: Hotspot + Pivot Up (V-Shape below 0)
-            if ((recon < trend && price < recon) && (cur.value < 0 && cur.value > prev.value && prev.value <= prevPrev.value)) {
-                markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1.5 }); used.add(time);
+            // RESET FLAGS on Zero Cross
+            // If noise goes positive, we can Buy again in the next negative cycle
+            if (cur.value >= 0) hasFiredBuy = false;
+            // If noise goes negative, we can Sell again in the next positive cycle
+            if (cur.value <= 0) hasFiredSell = false;
+
+            // BUY: Hotspot + Slope Up (Trigger Once per Cycle)
+            if (cur.value < 0 && !hasFiredBuy) {
+                // Match BASIC logic exactly: (Hotspot) AND (Slope Up)
+                if ((recon < trend && price < recon) && (cur.value >= prev.value)) {
+                    markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'S', size: 1.5 });
+                    hasFiredBuy = true; // Lock until reset
+                }
             } 
-            // SELL: Hotspot + Pivot Down (Inverted V above 0)
-            else if ((recon > trend && price > recon) && (cur.value > 0 && cur.value < prev.value && prev.value >= prevPrev.value)) {
-                markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: '', size: 1.5 }); used.add(time);
+            // SELL: Hotspot + Slope Down (Trigger Once per Cycle)
+            else if (cur.value > 0 && !hasFiredSell) {
+                // Match BASIC logic exactly: (Hotspot) AND (Slope Down)
+                if ((recon > trend && price > recon) && (cur.value <= prev.value)) {
+                    markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'S', size: 1.5 });
+                    hasFiredSell = true; // Lock until reset
+                }
             }
         }
         return markers;
