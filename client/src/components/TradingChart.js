@@ -11,7 +11,7 @@ import {
 import { getChartData } from '../services/api';
 
 // ================================================================== //
-// UPDATED: Custom Primitive for Pane Labels (Bottom-Right)
+// CUSTOM PRIMITIVE FOR PANE LABELS (Bottom-Right)
 // ================================================================== //
 class SeriesLabelPrimitive {
     constructor(label) {
@@ -23,20 +23,17 @@ class SeriesLabelPrimitive {
                     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
                         ctx.save();
                         
-                        // 1. Styling
+                        // Styling
                         ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif';
                         ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; 
                         ctx.shadowColor = 'black'; 
                         ctx.shadowBlur = 2;
                         
-                        // 2. Alignment Changes for Bottom-Right
-                        ctx.textAlign = 'right';      // Align text to the right of the x-coordinate
+                        // Position: Bottom-Right
+                        ctx.textAlign = 'right';
                         ctx.textBaseline = 'bottom';
-                        
-                        // 3. Position: Bottom-Right
-                        // mediaSize.width gives us the full width of the pane
-                        const x = mediaSize.width - 10; // 10px padding from the right edge
-                        const y = mediaSize.height - 5; // 5px padding from the bottom
+                        const x = mediaSize.width - 10; 
+                        const y = mediaSize.height - 5; 
                         
                         ctx.fillText(this._label, x, y);
                         ctx.restore();
@@ -61,15 +58,18 @@ const TradingChart = ({
     autoUpdate = false,
     showHotspots = false,
     showForecast = false,
-    strategy = 'BASIC' // NEW PROP
+    strategy = 'BASIC' // 'BASIC', 'BASIC_SINGLE', or 'FAST'
 }) => {
     const chartContainerRef = useRef(null);
     const chartRef = useRef(null);
     const seriesRefs = useRef({});
+    
     // Store references to price lines to clear them on updates
     const priceLinesRef = useRef({ cyclic: [], noise: [] });
+    
     const markersInstanceRef = useRef(null);
-    const noiseMarkersRef = useRef(null); // <--- NEW: Ref for Fast Cycle markers
+    const noiseMarkersRef = useRef(null); // Markers for the Noise Panel
+    
     const resizeObserver = useRef(null);
     const wsRef = useRef(null);
     const realtimeIntervalRef = useRef(null);
@@ -96,7 +96,9 @@ const TradingChart = ({
         const map = { '1min': 60000, '5min': 300000, '15min': 900000, '30min': 1800000, '1h': 3600000, '2h': 7200000, '4h': 14400000, '1day': 86400000, '1week': 604800000, '1month': 2592000000 };
         return map[interval] || 86400000;
     };
+    
     const getCandleStartTime = (timestamp, intervalMs) => Math.floor(timestamp / intervalMs) * intervalMs;
+    
     const normalizeTimestamp = (time) => {
         if (typeof time === 'number') return time;
         if (typeof time === 'string') return parseInt(time).toString().length === 10 ? parseInt(time) : Math.floor(parseInt(time) / 1000);
@@ -104,6 +106,7 @@ const TradingChart = ({
         if (typeof time === 'object' && time !== null) return normalizeTimestamp(time.timestamp || time.time);
         return null;
     };
+
     const setVisibleRangeToLastNBars = (n = 250, padding = 20) => {
         if (!chartRef.current || !lastDataRef.current?.ohlc) return;
         try {
@@ -114,6 +117,7 @@ const TradingChart = ({
             timeScale.setVisibleLogicalRange({ from: Math.max(0, dataLength - n), to: (dataLength - 1) + padding + futurePadding });
         } catch (e) {}
     };
+
     const handleResetView = () => {
         if (!chartRef.current || !chartContainerRef.current) return;
         setVisibleRangeToLastNBars(150);
@@ -128,6 +132,7 @@ const TradingChart = ({
             }, 10);
         } catch (e) {}
     };
+
     const calculateHotspotData = (ohlcRaw, trendRaw, reconRaw) => {
         if (!ohlcRaw || !trendRaw || !reconRaw || ohlcRaw.length === 0) return [];
         const priceMap = new Map(); ohlcRaw.forEach(d => priceMap.set(normalizeTimestamp(d.time), d.close));
@@ -136,19 +141,25 @@ const TradingChart = ({
         const allTimes = reconRaw.map(d => d.time);
         const trendValues = allTimes.map(time => trendMap.get(time));
         const trendRising = new Array(allTimes.length).fill(false);
+        
         for (let i = 1; i < trendValues.length; i++) {
              if (trendValues[i] !== undefined && trendValues[i-1] !== undefined) trendRising[i] = trendValues[i] > trendValues[i-1];
              else if (i > 1) trendRising[i] = trendRising[i-1];
         }
         if (trendValues.length > 1) trendRising[0] = trendRising[1];
+        
         const res = [];
         for (let i = 0; i < allTimes.length; i++) {
             const time = allTimes[i], price = priceMap.get(time), recon = reconMap.get(time), trend = trendMap.get(time);
             if (price === undefined || recon === undefined || trend === undefined) continue;
+            
             const rising = trendRising[i];
             let color = 'rgba(0,0,0,0)';
+            
+            // Hotspot logic for painting candles
             if (recon < trend && price < recon) color = rising ? 'rgba(0,255,0,1)' : 'rgba(173,255,47,1)';
             else if (recon > trend && price > recon) color = !rising ? 'rgba(255,0,0,1)' : 'rgba(255,165,0,1)';
+            
             res.push({ time, open: price, high: Math.max(price, recon), low: Math.min(price, recon), close: recon, color, borderColor: color });
         }
         return res;
@@ -158,7 +169,7 @@ const TradingChart = ({
     // STRATEGY LOGIC
     // ================================================================== //
     
-    // 1. BASIC STRATEGY (Hotspots + Slope)
+    // 1. BASIC (LEGACY) - Multiple Entries on Slope
     const calculateBasicMarkers = (priceMap, trendMap, cyclicMap, sortedNoise) => {
         const markers = [], used = new Set();
         for (let i = 1; i < sortedNoise.length; i++) {
@@ -166,6 +177,7 @@ const TradingChart = ({
             const price = priceMap.get(time), trend = trendMap.get(time), cyclic = cyclicMap.get(time);
             if (price===undefined || trend===undefined || cyclic===undefined || used.has(time)) continue;
             const recon = trend + cyclic;
+            
             if ((recon < trend && price < recon) && (cur.value < 0 && cur.value >= prev.value)) {
                 markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1.5 }); used.add(time);
             } else if ((recon > trend && price > recon) && (cur.value > 0 && cur.value <= prev.value)) {
@@ -175,57 +187,61 @@ const TradingChart = ({
         return markers;
     };
 
-    // 2. FAST STRATEGY (5-Bar Count or Early Reversal)
-    const calculateFastMarkers = (sortedNoise) => {
-        const markers = [];
-        let downCount = 0;
-        let upCount = 0;
-
-        for (let i = 1; i < sortedNoise.length; i++) {
+    // 2. BASIC SINGLE - Single Entry on Pivot (V-Shape)
+    const calculateBasicSingleMarkers = (priceMap, trendMap, cyclicMap, sortedNoise) => {
+        const markers = [], used = new Set();
+        // Need i-2 for pivot check, start at 2
+        for (let i = 2; i < sortedNoise.length; i++) {
             const cur = sortedNoise[i];
             const prev = sortedNoise[i-1];
+            const prevPrev = sortedNoise[i-2];
             const time = cur.time;
 
+            const price = priceMap.get(time), trend = trendMap.get(time), cyclic = cyclicMap.get(time);
+            if (price===undefined || trend===undefined || cyclic===undefined || used.has(time)) continue;
+            const recon = trend + cyclic;
+            
+            // BUY: Hotspot + Pivot Up (V-Shape below 0)
+            if ((recon < trend && price < recon) && (cur.value < 0 && cur.value > prev.value && prev.value <= prevPrev.value)) {
+                markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1.5 }); used.add(time);
+            } 
+            // SELL: Hotspot + Pivot Down (Inverted V above 0)
+            else if ((recon > trend && price > recon) && (cur.value > 0 && cur.value < prev.value && prev.value >= prevPrev.value)) {
+                markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: '', size: 1.5 }); used.add(time);
+            }
+        }
+        return markers;
+    };
+
+    // 3. FAST STRATEGY
+    const calculateFastMarkers = (sortedNoise) => {
+        const markers = [];
+        let downCount = 0, upCount = 0;
+
+        for (let i = 1; i < sortedNoise.length; i++) {
+            const cur = sortedNoise[i], prev = sortedNoise[i-1], time = cur.time;
+
             if (cur.value < 0) {
-                upCount = 0; // Reset up count
-                // Descending
+                upCount = 0;
                 if (cur.value < prev.value) {
                     downCount++;
-                    // Trigger 1: 5th Descending Bar
-                    if (downCount === 5) {
-                        markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'F5', size: 1.5 });
-                    }
-                } 
-                // Ascending (Early Turn)
-                else if (cur.value > prev.value) {
-                    // Trigger 2: Reversal before 5th bar (must have started descending first)
-                    if (downCount > 0 && downCount < 5) {
-                        markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'Rev', size: 1.5 });
-                    }
-                    downCount = 0; // Reset after signal/turn
+                    if (downCount === 5) markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'F5', size: 1.5 });
+                } else if (cur.value > prev.value) {
+                    if (downCount > 0 && downCount < 5) markers.push({ time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: 'Rev', size: 1.5 });
+                    downCount = 0;
                 }
             } 
             else if (cur.value > 0) {
-                downCount = 0; // Reset down count
-                // Ascending
+                downCount = 0;
                 if (cur.value > prev.value) {
                     upCount++;
-                    // Trigger 1: 5th Ascending Bar
-                    if (upCount === 5) {
-                        markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'F5', size: 1.5 });
-                    }
-                }
-                // Descending (Early Turn)
-                else if (cur.value < prev.value) {
-                    // Trigger 2: Reversal before 5th bar
-                    if (upCount > 0 && upCount < 5) {
-                        markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'Rev', size: 1.5 });
-                    }
+                    if (upCount === 5) markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'F5', size: 1.5 });
+                } else if (cur.value < prev.value) {
+                    if (upCount > 0 && upCount < 5) markers.push({ time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: 'Rev', size: 1.5 });
                     upCount = 0;
                 }
             } else {
-                downCount = 0;
-                upCount = 0;
+                downCount = 0; upCount = 0;
             }
         }
         return markers;
@@ -238,8 +254,14 @@ const TradingChart = ({
         
         if (strategy === 'FAST') {
             return calculateFastMarkers(sortedNoise);
+        } else if (strategy === 'BASIC_S') {
+            // New Single-Entry Logic
+            const priceMap = new Map(); normalizedOhlc.forEach(d => priceMap.set(d.time, d.close));
+            const trendMap = new Map(); trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
+            const cyclicMap = new Map(); cyclicRaw.forEach(d => cyclicMap.set(normalizeTimestamp(d.time), d.value));
+            return calculateBasicSingleMarkers(priceMap, trendMap, cyclicMap, sortedNoise);
         } else {
-            // Prepare maps for BASIC strategy
+            // Default BASIC (Legacy)
             const priceMap = new Map(); normalizedOhlc.forEach(d => priceMap.set(d.time, d.close));
             const trendMap = new Map(); trendRaw.forEach(d => trendMap.set(normalizeTimestamp(d.time), d.value));
             const cyclicMap = new Map(); cyclicRaw.forEach(d => cyclicMap.set(normalizeTimestamp(d.time), d.value));
@@ -260,7 +282,7 @@ const TradingChart = ({
     useEffect(() => { updateMarkers(); }, [showSignals, strategy]);
 
     // ================================================================== //
-    // NEW: DRAW SUPPORT/RESISTANCE LEVELS ON CYCLIC/NOISE PANELS
+    // DRAW LEVELS (Support/Resistance)
     // ================================================================== //
     const drawLevels = (seriesName, levels, colorRes = '#ef5350', colorSup = '#26a69a') => {
         const series = seriesRefs.current[seriesName];
@@ -272,28 +294,16 @@ const TradingChart = ({
         store.forEach(line => series.removePriceLine(line));
         priceLinesRef.current[seriesName] = [];
 
-        // Draw Resistance (Average Peak)
         if (levels.res !== null && levels.res !== undefined) {
             const line = series.createPriceLine({
-                price: levels.res,
-                color: colorRes,
-                lineWidth: 1.5,
-                lineStyle: 2, // Dashed
-                axisLabelVisible: false,
-                title: '', // Keep clean
+                price: levels.res, color: colorRes, lineWidth: 1.5, lineStyle: 2, axisLabelVisible: false, title: ''
             });
             priceLinesRef.current[seriesName].push(line);
         }
 
-        // Draw Support (Average Valley)
         if (levels.sup !== null && levels.sup !== undefined) {
             const line = series.createPriceLine({
-                price: levels.sup,
-                color: colorSup,
-                lineWidth: 1.5,
-                lineStyle: 2, // Dashed
-                axisLabelVisible: false,
-                title: '', // Keep clean
+                price: levels.sup, color: colorSup, lineWidth: 1.5, lineStyle: 2, axisLabelVisible: false, title: ''
             });
             priceLinesRef.current[seriesName].push(line);
         }
@@ -346,7 +356,7 @@ const TradingChart = ({
                 const noiseD = mkSeriesData(data.ssa.noise, (p) => p.value<0?'#00FF00':(p.value>0?'#FF0000':'#808080'));
                 if (seriesRefs.current.noise) seriesRefs.current.noise.setData(noiseD);
 
-                // --- NEW: Calculate Markers for Fast Cycle Turning Points ---
+                // --- Calculate Markers for Fast Cycle Turning Points ---
                 const cycleMarkers = [];
                 for (let i = 2; i < noiseD.length; i++) {
                     const current = noiseD[i];
@@ -355,37 +365,17 @@ const TradingChart = ({
 
                     const isAscending = current.value > prev.value;
                     const wasAscending = prev.value > prevPrev.value;
-                    
                     const isDescending = current.value < prev.value;
                     const wasDescending = prev.value < prevPrev.value;
 
-                    // First Ascending Bar (Green Arrow Below)
                     if (isAscending && !wasAscending) {
-                        cycleMarkers.push({
-                            time: current.time,
-                            position: 'belowBar',
-                            color: '#00FF00',
-                            shape: 'arrowUp',
-                            text: '', 
-                            size: 1
-                        });
+                        cycleMarkers.push({ time: current.time, position: 'belowBar', color: '#00FF00', shape: 'arrowUp', text: '', size: 1 });
                     }
-
-                    // First Descending Bar (Red Arrow Above)
                     if (isDescending && !wasDescending) {
-                        cycleMarkers.push({
-                            time: current.time,
-                            position: 'aboveBar',
-                            color: '#FF0000',
-                            shape: 'arrowDown',
-                            text: '',
-                            size: 1
-                        });
+                        cycleMarkers.push({ time: current.time, position: 'aboveBar', color: '#FF0000', shape: 'arrowDown', text: '', size: 1 });
                     }
                 }
-                if (noiseMarkersRef.current) {
-                    noiseMarkersRef.current.setMarkers(cycleMarkers);
-                }
+                if (noiseMarkersRef.current) noiseMarkersRef.current.setMarkers(cycleMarkers);
                 // -------------------------------------------------------------
 
                 const reconD = [];
@@ -437,10 +427,7 @@ const TradingChart = ({
                 layout: { background: { type: ColorType.Solid, color: '#1a1a1a' }, textColor: '#d1d4dc' },
                 grid: { vertLines: { color: '#2b2b43' }, horzLines: { color: '#2b2b43' } },
                 timeScale: { timeVisible: true, secondsVisible: interval.includes('min'), borderColor: '#485158', rightOffset: 50 },
-                rightPriceScale: { 
-                    borderColor: '#485158',
-                    mode: PriceScaleMode.Logarithmic 
-                },
+                rightPriceScale: { borderColor: '#485158', mode: PriceScaleMode.Logarithmic },
                 width: container.clientWidth,
                 height: container.clientHeight,
             });
@@ -458,27 +445,21 @@ const TradingChart = ({
             seriesRefs.current.reconstructed = chart.addSeries(LineSeries, { color: '#1c86ffff', lineWidth: 3, lineStyle: 1, visible: showReconstructed, priceLineVisible: false });
             seriesRefs.current.forecast = chart.addSeries(LineSeries, { color: 'magenta', lineWidth: 2, lineStyle: 0, title: '', visible: showForecast, priceLineVisible: false });
 
-            // Panes 1 & 2
+            // Pane 1: Cyclic
             seriesRefs.current.cyclic = chart.addSeries(HistogramSeries, { priceScaleId: 'cyclic', base: 0, priceLineVisible: false }, 1);
-            // --- ATTACH CYCLIC LABEL ---
             seriesRefs.current.cyclic.attachPrimitive(new SeriesLabelPrimitive('CYCLIC'));
-
             seriesRefs.current.cyclicZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'cyclic', lineWidth: 4, priceLineVisible: false }, 1);
             
+            // Pane 2: Fast Cyclic
             seriesRefs.current.noise = chart.addSeries(HistogramSeries, { priceScaleId: 'noise', base: 0, priceLineVisible: false }, 2);
-            
-            // --- NEW: Attach Markers for Fast Cycle (Noise) ---
             noiseMarkersRef.current = createSeriesMarkers(seriesRefs.current.noise, []);
-            
-            // --- ATTACH FAST CYCLIC LABEL ---
             seriesRefs.current.noise.attachPrimitive(new SeriesLabelPrimitive('FAST CYCLIC'));
-
             seriesRefs.current.noiseZeroLine = chart.addSeries(LineSeries, { priceScaleId: 'noise', lineWidth: 4, priceLineVisible: false }, 2);
             
             chart.priceScale('cyclic').applyOptions({ borderColor: '#485158' });
             chart.priceScale('noise').applyOptions({ borderColor: '#485158' });
 
-            // Layout
+            // Layout Config
             const fixedH=150, buffer=10, totalH=container.clientHeight, avail=totalH-(fixedH*2)-buffer;
             const panes = chart.panes();
             if (panes && panes.length>=3 && avail>50) {
@@ -499,7 +480,7 @@ const TradingChart = ({
                 seriesRefs.current = {}; 
                 priceLinesRef.current = { cyclic: [], noise: [] };
                 markersInstanceRef.current = null;
-                noiseMarkersRef.current = null; // <--- NEW: Reset
+                noiseMarkersRef.current = null;
                 setChartReady(false);
             };
         } catch (e) { console.error(e); setError(e.message); setLoading(false); }
@@ -598,7 +579,7 @@ const TradingChart = ({
             {!loading && !error && (
                 <>
                     <div style={{ position: 'absolute', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 10, color: '#d1d4dc', fontSize: '16px', fontWeight: 'bold', pointerEvents: 'none' }}>
-                        {symbol} ({interval}) - {strategy} {/* Update Header to show Strategy */}
+                        {symbol} ({interval}) - {strategy} {/* Update Header */}
                     </div>
                     <button onClick={() => setShowTrend(p => !p)} className={`chart-toggle-button ${showTrend ? 'active' : ''}`} style={{ top: '60px' }}>{showTrend ? 'Trend: ON' : 'Trend: OFF'}</button>
                     <button onClick={() => setShowReconstructed(p => !p)} className={`chart-toggle-button ${showReconstructed ? 'active' : ''}`} style={{ top: '90px' }}>{showReconstructed ? 'Cyclic: ON' : 'Cyclic: OFF'}</button>

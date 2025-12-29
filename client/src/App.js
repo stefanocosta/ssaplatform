@@ -41,9 +41,7 @@ function Platform() {
   const [inputInterval, setInputInterval] = useState('1day');
   const [inputLValue, setInputLValue] = useState(30);
   const [inputUseAdaptiveL, setInputUseAdaptiveL] = useState(true);
-  
-  // --- NEW: STRATEGY SELECTION ---
-  const [inputStrategy, setInputStrategy] = useState('BASIC'); // 'BASIC' or 'FAST'
+  const [inputStrategy, setInputStrategy] = useState('BASIC');
 
   const [inputIsLive, setInputIsLive] = useState(false);
   const [inputAutoUpdate, setInputAutoUpdate] = useState(false);
@@ -59,19 +57,13 @@ function Platform() {
   const [showMonitorModal, setShowMonitorModal] = useState(false);
   
   // --- MONITOR & ALERT STATE ---
-  const [isMonitoring, setIsMonitoring] = useState(false);
-  const [monitorInterval, setMonitorInterval] = useState(null); 
+  const [isMonitoring, setIsMonitoring] = useState(false); // Used for Button Blinking
   const [activeAlerts, setActiveAlerts] = useState([]); 
   const [alertTimestamp, setAlertTimestamp] = useState(0); 
 
   // --- MOBILE MENU STATE ---
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // Refs
-  const monitorTimeoutRef = useRef(null);
-  const processedSignalsRef = useRef(new Set()); 
-  const audioRef = useRef(new Audio('/alert.mp3')); 
 
   const TWELVE_DATA_API_KEY = process.env.REACT_APP_TWELVE_DATA_API_KEY;
 
@@ -81,7 +73,6 @@ function Platform() {
     'Stocks': ['AAPL', 'AMZN', 'GOOG', 'MSFT','NVDA', 'META', 'TSLA', 'NFLX']
   };
 
-  // --- EFFECTS ---
   useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 768);
       window.addEventListener('resize', handleResize);
@@ -91,18 +82,11 @@ function Platform() {
   useEffect(() => { setLookupCount(c => c + 1); }, [inputInterval, inputLValue, inputUseAdaptiveL]); 
   useEffect(() => { if (inputSymbol !== 'CUSTOM') { setFinalSymbol(inputSymbol.toUpperCase()); setLookupCount(c => c + 1); } }, [inputSymbol]);
 
-  // ... (Monitoring Logic - performScan, getDelayToNextScan, etc. omitted for brevity as they are unchanged) ...
-  // [KEEP YOUR EXISTING MONITORING CODE HERE]
-  const getDelayToNextScan = (intervalStr) => { /* ... */ return 60000; }; // Placeholder
-  const performScan = async (interval) => { /* ... */ }; // Placeholder
-  const toggleMonitor = (interval) => { setMonitorInterval(interval); setIsMonitoring(true); setShowMonitorModal(false); };
-  const stopMonitor = () => { setIsMonitoring(false); setMonitorInterval(null); };
-
   // Handlers
   const handleSymbolChange = (e) => setInputSymbol(e.target.value);
   const handleCustomSymbolChange = (e) => setInputCustomSymbol(e.target.value);
   const handleIntervalChange = (e) => { setInputInterval(e.target.value); setShowScanner(false); setShowAnalysis(false); setShowTestModal(false); };
-  const handleStrategyChange = (e) => setInputStrategy(e.target.value); // New Handler
+  const handleStrategyChange = (e) => setInputStrategy(e.target.value); 
   const handleAutoUpdateToggle = (e) => setInputAutoUpdate(e.target.checked);
   const handleShowHotspotsToggle = (e) => setInputShowHotspots(e.target.checked);
   const handleShowForecastToggle = (e) => setInputShowForecast(e.target.checked);
@@ -143,10 +127,10 @@ function Platform() {
                 </select>
             </span>
 
-            {/* --- NEW: STRATEGY SELECTOR --- */}
             <span>
                 <select value={inputStrategy} onChange={handleStrategyChange} style={{ padding: '5px', backgroundColor: '#3c3c3c', color: '#00bcd4', border: '1px solid #555', fontWeight:'bold' }}>
                     <option value="BASIC">Basic</option>
+                    <option value="BASIC_S">Basic (Single)</option>
                     <option value="FAST">Fast</option>
                 </select>
             </span>
@@ -171,7 +155,7 @@ function Platform() {
               </button>
           )}
 
-          {/* 3. ACTION BUTTONS (Collapsible) */}
+          {/* 3. ACTION BUTTONS */}
           <div style={{ 
               display: (isMobile && !isMobileMenuOpen) ? 'none' : 'flex', 
               width: isMobile ? '100%' : 'auto', 
@@ -181,11 +165,24 @@ function Platform() {
               marginTop: isMobile ? '10px' : '0'
           }}>
             <button onClick={() => setShowTestModal(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#00c853', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><FlaskConical size={16} /> Test</button>
-            <button onClick={() => isMonitoring ? (window.confirm("Stop?") && stopMonitor()) : setShowMonitorModal(true)} className={isMonitoring ? 'flashing-monitor' : ''} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: isMonitoring ? '#e65100' : 'transparent', color: isMonitoring ? 'white' : '#ff9800', border: '1px solid #ff9800', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><Activity size={16} /> MON</button>
+            
+            {/* FIX: MON Button just opens modal. Styling reflects active state. */}
+            <button 
+                onClick={() => setShowMonitorModal(true)} 
+                className={isMonitoring ? 'flashing-monitor' : ''} 
+                style={{ 
+                    flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', 
+                    background: isMonitoring ? '#e65100' : 'transparent', 
+                    color: isMonitoring ? 'white' : '#ff9800', 
+                    border: '1px solid #ff9800', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' 
+                }}
+            >
+                <Activity size={16} /> MON
+            </button>
+            
             <button onClick={() => setShowAnalysis(!showAnalysis)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#e600adff', color: '#d1d4dc', border: '1px solid #444', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><Activity size={16} /> DA</button>
             <button onClick={() => setShowScanner(true)} style={{ flex: isMobile ? 1 : 'none', display: 'flex', justifyContent: 'center', gap: '5px', background: '#0078d4', color: 'white', border: 'none', borderRadius: '4px', padding: '5px 12px', cursor: 'pointer' }}><Radar size={16} /> Scan</button>
           </div>
-
         </div>
 
         <div className="ChartWrapper" style={{ flex: '1 1 auto', position: 'relative', overflow: 'hidden', width: '100%', minHeight: 0 }}>
@@ -200,7 +197,7 @@ function Platform() {
                 autoUpdate={inputAutoUpdate} 
                 showHotspots={inputShowHotspots} 
                 showForecast={inputShowForecast} 
-                strategy={inputStrategy} // <--- PASSING THE STRATEGY
+                strategy={inputStrategy}
             />
           </div>
         </div>
@@ -208,7 +205,17 @@ function Platform() {
         {showScanner && <ScannerModal interval={inputInterval} strategy={inputStrategy} onClose={() => setShowScanner(false)} onSelectAsset={setInputSymbol} />}
         {showAnalysis && <AnalysisModal symbol={finalSymbol} interval={inputInterval} strategy={inputStrategy} onClose={() => setShowAnalysis(false)} />}
         {showTestModal && <TestModal onClose={() => setShowTestModal(false)} />}
-        {showMonitorModal && <MonitorModal onClose={() => setShowMonitorModal(false)} onStart={toggleMonitor} strategy = {inputStrategy} />}
+        
+        {/* FIX: Render MonitorModal ALWAYS. Pass 'isOpen' to control visibility. */}
+        <MonitorModal 
+            isOpen={showMonitorModal}
+            onClose={() => setShowMonitorModal(false)} 
+            onOpen={() => setShowMonitorModal(true)}
+            strategy={inputStrategy} 
+            onSelectAsset={setInputSymbol}
+            onStatusChange={setIsMonitoring} // Update App state when monitor starts/stops
+        />
+
       </div>
       <div className="RotateNotifier"><p>Please rotate your device to portrait mode</p></div>
     </AuthForm>

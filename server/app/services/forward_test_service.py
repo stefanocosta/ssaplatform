@@ -36,7 +36,7 @@ def run_forward_test(interval, api_key=None):
     interval_mins = get_interval_minutes(interval)
     max_delay_minutes = interval_mins + 20 
     
-    strategies_to_test = ['basic', 'fast'] # Loop both strategies
+    strategies_to_test = ['basic', 'basic_s', 'fast'] # Loop both strategies
 
     for symbol in TRACKED_ASSETS:
         ohlc = get_historical_data_from_db(symbol, interval, limit=500)
@@ -68,7 +68,7 @@ def run_forward_test(interval, api_key=None):
                 'forecast': result['forecast_dir'],
                 'cycle': result['cycle_pct'],
                 'fast': result['fast_pct'],
-                'strategy': strategy # Pass strategy to handler
+                'strategy': strategy # Pass strategy to handler, Saves as 'basic', 'basic_single', or 'fast'
             }
             
             print(f"   ⚡ {strategy.upper()} SIGNAL: {symbol} {signal} @ {price}")

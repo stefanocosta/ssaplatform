@@ -37,16 +37,20 @@ const HelpPopup = ({ onClose }) => (
     </div>
 );
 
-// --- SYSTEM MONITOR COMPONENT ---
+// --- SYSTEM MONITOR COMPONENT (Compact Version) ---
 const SystemMonitor = ({ trades, isMobile, strategy }) => {
     const [now, setNow] = useState(new Date());
     const [startTime, setStartTime] = useState(null);
 
+    // 1. Determine Start Time based on selected strategy
     useEffect(() => {
         if (trades && trades.length > 0) {
+            // Filter trades by the current strategy to get accurate uptime
             const strategyTrades = trades.filter(t => {
                 const tStrat = t.strategy ? t.strategy.toUpperCase() : 'BASIC';
-                return tStrat === strategy;
+                // Handle naming mismatch if any, usually backend strategy names are lowercase/snake_case
+                // Ensure comparison is case-insensitive and handles BASIC_SINGLE correctly
+                return tStrat === strategy; 
             });
 
             if (strategyTrades.length > 0) {
@@ -54,7 +58,7 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
                 const firstDate = new Date(sorted[0].entry_date);
                 setStartTime(firstDate);
             } else {
-                setStartTime(null);
+                setStartTime(null); // No trades for this strategy yet
             }
         }
     }, [trades, strategy]);
@@ -80,6 +84,7 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
         const next = Math.ceil((minutes + 1) / intervalMinutes) * intervalMinutes;
         const diffMins = next - minutes - 1; 
         const diffSecs = 59 - now.getSeconds();
+        
         let totalMins = diffMins;
         if (intervalMinutes === 60) totalMins = 59 - minutes;
         if (intervalMinutes === 240) { 
@@ -89,11 +94,21 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
             if (hourDiff < 0) hourDiff += 24;
             totalMins = (hourDiff * 60) + (59 - minutes);
         }
+
         return `${totalMins}m`;
     };
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '20px', marginLeft: isMobile ? '0' : '20px', borderLeft: isMobile ? 'none' : '1px solid #444', paddingLeft: isMobile ? '0' : '20px', flexWrap: 'nowrap', fontSize: isMobile ? '0.65rem' : '0.75rem', overflow: 'hidden' }}>
+        <div style={{ 
+            display: 'flex', alignItems: 'center', 
+            gap: isMobile ? '8px' : '20px', 
+            marginLeft: isMobile ? '0' : '20px', 
+            borderLeft: isMobile ? 'none' : '1px solid #444', 
+            paddingLeft: isMobile ? '0' : '20px', 
+            flexWrap: 'nowrap', 
+            fontSize: isMobile ? '0.65rem' : '0.75rem',
+            overflow: 'hidden'
+        }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div style={{ position: 'relative', width: '8px', height: '8px' }}>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%' }}></div>
@@ -101,10 +116,14 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
                 </div>
                 {!isMobile && <div style={{ color: '#00e676', fontWeight: 'bold', fontSize: '0.7rem', letterSpacing: '1px' }}>RUNNING</div>}
             </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                 <Clock size={isMobile ? 12 : 14} color="#666" />
-                <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>{getRunningDuration()}</div>
+                <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>
+                    {getRunningDuration()}
+                </div>
             </div>
+
             <div style={{ display: 'flex', gap: isMobile ? '8px' : '15px', color: '#888', whiteSpace: 'nowrap' }}>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>15m:</span><span style={{color: '#ff9800', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(15)}</span></div>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>1h:</span><span style={{color: '#29b6f6', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(60)}</span></div>
@@ -115,7 +134,7 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
     );
 };
 
-// --- EQUITY CHART ---
+// --- EQUITY CHART (Reused) ---
 const LargeEquityChart = ({ trades }) => {
     const [hoveredPoint, setHoveredPoint] = useState(null);
     const containerRef = useRef(null);
@@ -164,10 +183,15 @@ const PerformersView = ({ data }) => {
         if (!data || !data.trades) return {};
         const groups = {};
         data.trades.forEach(t => {
+            // FIX: Only count CLOSED trades
             if (t.status !== 'CLOSED') return;
+            
             if (!groups[t.interval]) groups[t.interval] = {};
             if (!groups[t.interval][t.symbol]) groups[t.interval][t.symbol] = { symbol: t.symbol, pnl: 0, wins: 0, losses: 0, total: 0 };
-            const g = groups[t.interval][t.symbol]; const pnl = t.pnl || 0; g.pnl += pnl; g.total++;
+            const g = groups[t.interval][t.symbol]; 
+            const pnl = t.pnl || 0; 
+            g.pnl += pnl; 
+            g.total++;
             if (pnl > 0) g.wins++; else if (pnl < 0) g.losses++;
         });
         const result = {};
@@ -213,9 +237,10 @@ const StatCard = ({ label, value, color = 'white' }) => (
 );
 
 const IntervalCard = ({ intervalData, isActive, onClick }) => (
-    <div onClick={onClick} style={{ background: isActive ? '#3a3a45' : '#2a2a2a', border: isActive ? '1px solid #0078d4' : '1px solid #444', borderRadius: '6px', padding: '8px', minWidth: '130px', flex: 1, cursor: 'pointer', transition: 'all 0.2s' }}>
+    <div onClick={onClick} style={{ background: isActive ? '#3a3a45' : '#2a2a2a', border: isActive ? '1px solid #0078d4' : '1px solid #444', borderRadius: '6px', padding: '8px', minWidth: '130px', flex: 1, cursor: 'pointer', transition: 'all 0.2s', position: 'relative' }}>
         <div style={{ color: isActive ? '#0078d4' : '#d1d4dc', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '5px', borderBottom:'1px solid #444', paddingBottom:'3px', display:'flex', justifyContent:'space-between' }}>
-            {intervalData.interval} {isActive && <span style={{fontSize:'0.7rem', background:'#0078d4', color:'white', padding:'0 4px', borderRadius:'3px'}}>ON</span>}
+            {intervalData.interval} 
+            {isActive && <CheckSquare size={14} color="#0078d4" />}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}><span style={{color:'#aaa'}}>PnL:</span><span style={{fontWeight:'bold', color: intervalData.pnl >= 0 ? '#00c853' : '#ff3d00'}}>${intervalData.pnl}</span></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}><span style={{color:'#aaa'}}>Win%:</span><span style={{color:'white'}}>{intervalData.win_rate}%</span></div>
@@ -241,7 +266,6 @@ const TestModal = ({ onClose }) => {
     const [btAssets, setBtAssets] = useState(new Set(ASSET_CATEGORIES['Crypto'])); 
     const [btInterval, setBtInterval] = useState('1day');
     const [btBars, setBtBars] = useState(300);
-    const [showAssetMenu, setShowAssetMenu] = useState(false);
     
     // BACKTEST PARAMS
     const [btStrategy, setBtStrategy] = useState('BASIC');
@@ -251,8 +275,8 @@ const TestModal = ({ onClose }) => {
     const [btTpAtr, setBtTpAtr] = useState(5.0);
 
     // --- FILTERS (Forward Only) ---
-    const [filterStrategy, setFilterStrategy] = useState('BASIC'); 
-    const [filterInterval, setFilterInterval] = useState(null); 
+    const [filterStrategy, setFilterStrategy] = useState('BASIC'); // Default to new system
+    const [filterIntervals, setFilterIntervals] = useState(new Set()); // CHANGED: Set for multi-select
     const [filterStatus, setFilterStatus] = useState('ALL');    
     const [filterDirection, setFilterDirection] = useState('ALL'); 
     const [filterAsset, setFilterAsset] = useState('');
@@ -315,6 +339,14 @@ const TestModal = ({ onClose }) => {
     const toggleFilterAsset = (s) => { const n = new Set(selectedAssets); if(n.has(s)) n.delete(s); else n.add(s); setSelectedAssets(n); };
     const toggleFilterCategory = (cat) => { const items = ASSET_CATEGORIES[cat]; const all = items.every(x=>selectedAssets.has(x)); const n=new Set(selectedAssets); items.forEach(x=>all?n.delete(x):n.add(x)); setSelectedAssets(n); };
 
+    // NEW: Toggle Interval Helper
+    const toggleFilterInterval = (intv) => {
+        const n = new Set(filterIntervals);
+        if (n.has(intv)) n.delete(intv);
+        else n.add(intv);
+        setFilterIntervals(n);
+    };
+
     const getDirColor = (d) => d === 'UP' ? '#00c853' : d === 'DOWN' ? '#ff3d00' : '#888';
     const getCycleColor = (v) => v > 80 ? '#ff3d00' : v < 20 ? '#00c853' : '#aaa';
 
@@ -326,7 +358,9 @@ const TestModal = ({ onClose }) => {
                 const tradeStrat = t.strategy ? t.strategy.toUpperCase() : 'BASIC';
                 if (tradeStrat !== filterStrategy) return false;
 
-                if (filterInterval && t.interval !== filterInterval) return false;
+                // CHANGED: Multi-select Logic (OR logic)
+                if (filterIntervals.size > 0 && !filterIntervals.has(t.interval)) return false;
+
                 if (filterStatus !== 'ALL' && t.status !== filterStatus) return false;
                 if (filterDirection !== 'ALL' && t.direction !== filterDirection) return false;
                 if (selectedAssets.size > 0) { if (!selectedAssets.has(t.symbol)) return false; } 
@@ -364,10 +398,9 @@ const TestModal = ({ onClose }) => {
                 avg_loss: s.loss_count > 0 ? s.sum_losses / s.loss_count : 0
             }
         };
-    }, [data, mode, filterStrategy, filterInterval, filterStatus, filterDirection, filterAsset, selectedAssets, filterTrend, filterForecast]);
+    }, [data, mode, filterStrategy, filterIntervals, filterStatus, filterDirection, filterAsset, selectedAssets, filterTrend, filterForecast]);
 
     // --- RECALCULATE INTERVAL STATS DYNAMICALLY ---
-    // [FIX] Generates interval stats based on the *filtered strategy* trades, ignoring the interval filter itself.
     const intervalStats = useMemo(() => {
         if (!data?.trades) return [];
 
@@ -377,7 +410,7 @@ const TestModal = ({ onClose }) => {
             '4h': { pnl: 0, wins: 0, closed: 0, open: 0 }
         };
 
-        // Filter: Apply all filters EXCEPT Interval, because we want to show all intervals side-by-side
+        // Filter: Apply all filters EXCEPT Interval to show "potential" stats per card
         const cardTrades = data.trades.filter(t => {
             const tradeStrat = t.strategy ? t.strategy.toUpperCase() : 'BASIC';
             if (tradeStrat !== filterStrategy) return false;
@@ -459,7 +492,7 @@ const TestModal = ({ onClose }) => {
     
     const renderContent = () => {
         if (showPerformers) {
-            // FIX: Pass FILTERED dashboardData, not raw 'data'
+            // FIX: Pass filtered data to ensure Performers respect strategy filter
             return <PerformersView data={dashboardData} />;
         }
         if (showEquity) {
@@ -473,11 +506,8 @@ const TestModal = ({ onClose }) => {
                             {createSortHeader('Asset', 'symbol')}
                             {createSortHeader(mode==='forward'?'Int':'Time', 'interval')}
                             {createSortHeader('Dir', 'direction')}
-                            {mode === 'forward' && createSortHeader('TRND', 'trend')}
-                            {mode === 'forward' && createSortHeader('CYC', 'cycle')}
-                            {mode === 'forward' && createSortHeader('FST', 'fast')}
-                            {mode === 'forward' && createSortHeader('FCST', 'forecast')}
                             {mode === 'forward' && createSortHeader('Status', 'status')}
+                            {mode === 'forward' && createSortHeader('TRND', 'trend')}
                             {createSortHeader('Entry $', 'entry_price')}
                             {createSortHeader('Time', 'entry_date')}
                             {createSortHeader('Exit', 'exit_date')}
@@ -492,12 +522,10 @@ const TestModal = ({ onClose }) => {
                                 <td>{t.interval}</td>
                                 <td><span style={{color:t.direction==='LONG'?'#00c853':'#ff3d00', fontWeight:'bold', padding:'2px 6px', background:'rgba(255,255,255,0.1)', borderRadius:'4px'}}>{t.direction}</span></td>
                                 
-                                {mode === 'forward' && <td style={{fontWeight:'bold', color:getDirColor(t.trend)}}>{t.trend}</td>}
-                                {mode === 'forward' && <td style={{fontWeight:'bold', color:getCycleColor(t.cycle)}}>{t.cycle}</td>}
-                                {mode === 'forward' && <td style={{fontWeight:'bold', color:getCycleColor(t.fast)}}>{t.fast}</td>}
-                                {mode === 'forward' && <td style={{fontWeight:'bold', color:getDirColor(t.forecast)}}>{t.forecast}</td>}
                                 {mode === 'forward' && <td style={{color:t.status==='OPEN'?'#29b6f6':'#888'}}>{t.status}</td>}
+                                {mode === 'forward' && <td style={{fontWeight:'bold', color:getDirColor(t.trend)}}>{t.trend}</td>}
                                 
+                                {/* FIX: 4 decimal places for Prices */}
                                 <td>{t.entry_price.toFixed(4)}</td>
                                 <td style={{fontSize:'0.8rem', color:'#aaa'}}>{t.entry_date}</td>
                                 <td style={{fontSize:'0.8rem', color:'#aaa'}}>{t.exit_date}</td>
@@ -524,13 +552,15 @@ const TestModal = ({ onClose }) => {
                     
                     {/* LEFT: Title & Mode Toggle */}
                     <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                        {!isMobile && <button onClick={() => setMode('forward')} style={{ background: mode === 'forward' ? '#0078d4' : '#333', border: 'none', padding: '8px 15px', borderRadius: '6px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Forward Test</button>}
+                        {/* Only show forward test button on Desktop if we want to save space */}
+                        <button onClick={() => setMode('forward')} style={{ background: mode === 'forward' ? '#0078d4' : '#333', border: 'none', padding: '8px 15px', borderRadius: '6px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Forward Test</button>
                         
-                        {/* MOVED STRATEGY HERE */}
+                        {/* MOVED STRATEGY HERE - HEADER */}
                         {mode === 'forward' && (
                              <select value={filterStrategy} onChange={(e) => setFilterStrategy(e.target.value)} style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #ff9800', background: '#333', color: '#ff9800', fontWeight:'bold', cursor:'pointer', outline: 'none' }}>
-                                <option value="BASIC">BASIC</option>
-                                <option value="FAST">FAST</option>
+                                <option value="BASIC">Basic (Legacy)</option>
+                                <option value="BASIC_S">Basic (Single)</option>
+                                <option value="FAST">Fast</option>
                             </select>
                         )}
 
@@ -542,10 +572,9 @@ const TestModal = ({ onClose }) => {
                         )}
                     </div>
 
-                    {/* CENTER: SYSTEM MONITOR (Integrated here) */}
+                    {/* CENTER: SYSTEM MONITOR */}
                     {mode === 'forward' && data?.trades && (
                          <div style={{flex: 1, display: 'flex', justifyContent: 'center'}}>
-                             {/* UPDATED: Pass strategy to filter time */}
                              <SystemMonitor trades={data.trades} isMobile={isMobile} strategy={filterStrategy} />
                          </div>
                     )}
@@ -597,11 +626,29 @@ const TestModal = ({ onClose }) => {
                         </div>
                         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}><option value="ALL">Status: All</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select>
                         <select value={filterDirection} onChange={(e) => setFilterDirection(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}><option value="ALL">Pos: All</option><option value="LONG">Long</option><option value="SHORT">Short</option></select>
-                        <select value={filterInterval || 'ALL'} onChange={(e) => setFilterInterval(e.target.value === 'ALL' ? null : e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}><option value="ALL">Int: All</option><option value="15min">15min</option><option value="1h">1 Hour</option><option value="4h">4 Hours</option></select>
+                        
+                        {/* CHANGED: Interval Dropdown now reacts to Set */}
+                        <select 
+                            value={filterIntervals.size === 1 ? [...filterIntervals][0] : (filterIntervals.size > 1 ? 'MULTIPLE' : 'ALL')} 
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'ALL') setFilterIntervals(new Set());
+                                else if (val === 'MULTIPLE') { /* Do nothing, let user clear if they want */ }
+                                else setFilterIntervals(new Set([val]));
+                            }} 
+                            style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}
+                        >
+                            <option value="ALL">Int: All</option>
+                            <option value="15min">15min</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="4h">4 Hours</option>
+                            {filterIntervals.size > 1 && <option value="MULTIPLE" disabled>Multiple ({filterIntervals.size})</option>}
+                        </select>
+
                         <select value={filterTrend} onChange={(e) => setFilterTrend(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}><option value="ALL">Trend: All</option><option value="FOLLOW">Trend Follow</option><option value="COUNTER">Counter Trend</option></select>
                         <select value={filterForecast} onChange={(e) => setFilterForecast(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #555', background: '#1a1a1a', color: 'white', fontSize: '0.85rem' }}><option value="ALL">Forecast: All</option><option value="WITH">With Forecast</option><option value="AGAINST">Against Forecast</option></select>
-                        {(filterInterval || filterStatus !== 'ALL' || filterDirection !== 'ALL' || filterAsset || selectedAssets.size > 0 || filterTrend !== 'ALL' || filterForecast !== 'ALL') && (
-                            <button onClick={() => { setFilterInterval(null); setFilterStatus('ALL'); setFilterDirection('ALL'); setFilterAsset(''); setSelectedAssets(new Set()); setFilterTrend('ALL'); setFilterForecast('ALL'); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f44336', fontSize: '0.75rem', cursor: 'pointer', fontWeight:'bold' }}>RESET</button>
+                        {(filterIntervals.size > 0 || filterStatus !== 'ALL' || filterDirection !== 'ALL' || filterAsset || selectedAssets.size > 0 || filterTrend !== 'ALL' || filterForecast !== 'ALL') && (
+                            <button onClick={() => { setFilterIntervals(new Set()); setFilterStatus('ALL'); setFilterDirection('ALL'); setFilterAsset(''); setSelectedAssets(new Set()); setFilterTrend('ALL'); setFilterForecast('ALL'); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f44336', fontSize: '0.75rem', cursor: 'pointer', fontWeight:'bold' }}>RESET</button>
                         )}
                     </div>
                 )}
@@ -633,7 +680,12 @@ const TestModal = ({ onClose }) => {
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
                                     {/* FIX: Use Calculated Interval Stats (filtered by strategy) instead of raw backend data */}
                                     {intervalStats.map(intv => (
-                                        <IntervalCard key={intv.interval} intervalData={intv} isActive={filterInterval === intv.interval} onClick={() => setFilterInterval(filterInterval === intv.interval ? null : intv.interval)} />
+                                        <IntervalCard 
+                                            key={intv.interval} 
+                                            intervalData={intv} 
+                                            isActive={filterIntervals.has(intv.interval)} 
+                                            onClick={() => toggleFilterInterval(intv.interval)} 
+                                        />
                                     ))}
                                 </div>
                             )}

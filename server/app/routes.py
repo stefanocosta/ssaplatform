@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import get_jwt_identity, jwt_required
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, timezone
@@ -203,91 +204,66 @@ def perform_single_analysis(symbol, interval, api_key, strategy='basic'):
         days_since_signal = -1
         entry_price = 0.0 
         
-        # --- STRATEGY 1: BASIC (Standard SSA Mean Reversion) ---
+        # 1. BASIC LEGACY (Standard SSA Mean Reversion)
         if strategy == 'basic':
-            for i in range(N-1, max(0, N-60), -1):
-                c_price = close_prices[i]
-                c_trend = trend[i]
-                c_recon = reconstructed[i]
-                c_noise = noise[i]
-                p_noise = noise[i-1]
+            for i in range(N-1, max(2, N-60), -1):
+                c_price = close_prices[i]; c_trend = trend[i]; c_recon = reconstructed[i]
+                c_noise = noise[i]; p_noise = noise[i-1]
                 
                 is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
                 is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
+                # Legacy Slope Logic
                 is_noise_buy = (c_noise < 0) and (c_noise >= p_noise)
                 is_noise_sell = (c_noise > 0) and (c_noise <= p_noise)
                 
                 if is_hot_buy and is_noise_buy:
-                    last_signal = "LONG"
-                    days_since_signal = (N - 1) - i
-                    entry_price = c_price
-                    break
+                    last_signal = "LONG"; days_since_signal = (N-1)-i; entry_price = c_price; break
                 elif is_hot_sell and is_noise_sell:
-                    last_signal = "SHORT"
-                    days_since_signal = (N - 1) - i
-                    entry_price = c_price
-                    break
-        
-        # --- STRATEGY 2: FAST (Replicated EXACT Logic from TradingChart.js) ---
+                    last_signal = "SHORT"; days_since_signal = (N-1)-i; entry_price = c_price; break
+
+        # 2. BASIC SINGLE (NEW) same as basic but only uses one entry.
+        elif strategy == 'basic_s':
+            for i in range(N-1, max(2, N-60), -1):
+                c_price = close_prices[i]; c_trend = trend[i]; c_recon = reconstructed[i]
+                c_noise = noise[i]; p_noise = noise[i-1]; pp_noise = noise[i-2]
+                
+                is_hot_buy = (c_recon < c_trend) and (c_price < c_recon)
+                is_hot_sell = (c_recon > c_trend) and (c_price > c_recon)
+                # Pivot Logic
+                is_pivot_buy = (c_noise < 0) and (c_noise > p_noise) and (p_noise <= pp_noise)
+                is_pivot_sell = (c_noise > 0) and (c_noise < p_noise) and (p_noise >= pp_noise)
+                
+                if is_hot_buy and is_pivot_buy:
+                    last_signal = "LONG"; days_since_signal = (N-1)-i; entry_price = c_price; break
+                elif is_hot_sell and is_pivot_sell:
+                    last_signal = "SHORT"; days_since_signal = (N-1)-i; entry_price = c_price; break
+
+        # 3. FAST
         elif strategy == 'fast':
-            # We calculate signal state for the whole series first
-            signals = np.zeros(N, dtype=int) # 0=None, 1=Long, -1=Short
-            down_count = 0
-            up_count = 0
-            
+            # ... (Existing Fast Logic) ...
+            signals = np.zeros(N, dtype=int); down=0; up=0
             for k in range(1, N):
-                val = noise[k]
-                prev = noise[k-1]
-                
+                val = noise[k]; prev = noise[k-1]
                 if val < 0:
-                    up_count = 0
-                    if val < prev: # Descending
-                        down_count += 1
-                        if down_count == 5:
-                            signals[k] = 1 # F5 LONG
-                    elif val > prev: # Ascending (Turn)
-                        if 0 < down_count < 5:
-                            signals[k] = 1 # REV LONG
-                        down_count = 0 # Reset
-                
+                    up=0; 
+                    if val < prev: down+=1; signals[k] = 1 if down==5 else 0
+                    elif val > prev: signals[k] = 1 if 0 < down < 5 else 0; down=0
                 elif val > 0:
-                    down_count = 0
-                    if val > prev: # Ascending
-                        up_count += 1
-                        if up_count == 5:
-                            signals[k] = -1 # F5 SHORT
-                    elif val < prev: # Descending (Turn)
-                        if 0 < up_count < 5:
-                            signals[k] = -1 # REV SHORT
-                        up_count = 0 # Reset
-                else:
-                    down_count = 0
-                    up_count = 0
+                    down=0;
+                    if val > prev: up+=1; signals[k] = -1 if up==5 else 0
+                    elif val < prev: signals[k] = -1 if 0 < up < 5 else 0; up=0
+                else: down=0; up=0
             
-            # Find last signal in window
             for i in range(N-1, max(0, N-60), -1):
-                if signals[i] == 1:
-                    last_signal = "LONG"
-                    days_since_signal = (N - 1) - i
-                    entry_price = close_prices[i]
-                    break
-                elif signals[i] == -1:
-                    last_signal = "SHORT"
-                    days_since_signal = (N - 1) - i
-                    entry_price = close_prices[i]
-                    break
+                if signals[i] == 1: last_signal = "LONG"; days_since_signal = (N-1)-i; entry_price = close_prices[i]; break
+                elif signals[i] == -1: last_signal = "SHORT"; days_since_signal = (N-1)-i; entry_price = close_prices[i]; break
         
         return {
-            "interval": interval,
-            "trend": trend_dir,
-            "status": last_signal,
-            "bars_ago": days_since_signal,
-            "cycle_pct": int(cyc_pos),
-            "fast_pct": int(fast_pos),
-            "fast_rising": fast_rising,
-            "current_price": float(close_prices[-1]), # Return current price
-            "entry_price": float(entry_price), # Return entry price for PnL
-            "components": components # Return components for Forecast logic (internal use)
+            "interval": interval, "trend": trend_dir, "status": last_signal,
+            "bars_ago": days_since_signal, "cycle_pct": int(cyc_pos),
+            "fast_pct": int(fast_pos), "fast_rising": fast_rising,
+            "current_price": float(close_prices[-1]), "entry_price": float(entry_price),
+            "components": components 
         }
 
     except Exception as e:
@@ -829,3 +805,30 @@ def deep_wave_analyze():
     except Exception as e:
         print(f"Deep Analysis Error: {e}")
         return jsonify({"error": str(e)}), 500
+    
+@bp.route('/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    
+    if not old_password or not new_password:
+        return jsonify({"msg": "Both old and new passwords are required"}), 400
+        
+    user = db.session.execute(
+        db.select(User).filter_by(id=user_id)
+    ).scalar_one_or_none()
+    
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+        
+    if not user.check_password(old_password):
+        return jsonify({"msg": "Incorrect old password"}), 401
+        
+    user.set_password(new_password)
+    db.session.commit()
+    
+    return jsonify({"msg": "Password updated successfully"}), 200
