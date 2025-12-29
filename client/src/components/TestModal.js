@@ -107,9 +107,11 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
             paddingLeft: isMobile ? '0' : '20px', 
             flexWrap: 'nowrap', 
             fontSize: isMobile ? '0.65rem' : '0.75rem',
-            overflow: 'hidden'
+            overflowX: 'auto', // Changed from 'hidden' to 'auto' to allow scrolling if needed
+            scrollbarWidth: 'none', // Hide scrollbar for cleaner look
+            msOverflowStyle: 'none'
         }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                 <div style={{ position: 'relative', width: '8px', height: '8px' }}>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%' }}></div>
                     <div style={{ position: 'absolute', width: '100%', height: '100%', background: '#00e676', borderRadius: '50%', animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }}></div>
@@ -117,14 +119,14 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
                 {!isMobile && <div style={{ color: '#00e676', fontWeight: 'bold', fontSize: '0.7rem', letterSpacing: '1px' }}>RUNNING</div>}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <Clock size={isMobile ? 12 : 14} color="#666" />
                 <div style={{ fontWeight: 'bold', color: '#ccc', fontFamily: 'monospace' }}>
                     {getRunningDuration()}
                 </div>
             </div>
 
-            <div style={{ display: 'flex', gap: isMobile ? '8px' : '15px', color: '#888', whiteSpace: 'nowrap' }}>
+            <div style={{ display: 'flex', gap: isMobile ? '8px' : '15px', color: '#888', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>15m:</span><span style={{color: '#ff9800', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(15)}</span></div>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>1h:</span><span style={{color: '#29b6f6', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(60)}</span></div>
                 <div style={{display:'flex', alignItems:'center', gap:'2px'}}><span>4h:</span><span style={{color: '#e040fb', fontFamily:'monospace', fontWeight:'bold'}}>{getTimeToNext(240)}</span></div>
@@ -279,7 +281,7 @@ const TestModal = ({ onClose }) => {
     const [btTpAtr, setBtTpAtr] = useState(5.0);
 
     // --- FILTERS (Forward Only) ---
-    const [filterStrategy, setFilterStrategy] = useState('BASIC'); // Default to new system
+    const [filterStrategy, setFilterStrategy] = useState('BASIC_S'); // Default to new system
     const [filterIntervals, setFilterIntervals] = useState(new Set()); // CHANGED: Set for multi-select
     const [filterStatus, setFilterStatus] = useState('ALL');    
     const [filterDirection, setFilterDirection] = useState('ALL'); 
@@ -558,8 +560,11 @@ const TestModal = ({ onClose }) => {
                     
                     {/* LEFT: Title & Mode Toggle */}
                     <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                        {/* Only show forward test button on Desktop if we want to save space */}
-                        <button onClick={() => setMode('forward')} style={{ background: mode === 'forward' ? '#0078d4' : '#333', border: 'none', padding: '8px 15px', borderRadius: '6px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Forward Test</button>
+                        
+                        {/* CHANGED: Static Title instead of Button */}
+                        <span style={{ color: 'white', fontWeight: 'bold', fontSize: isMobile ? '0.9rem' : '1.1rem', whiteSpace: 'nowrap' }}>
+                            {isMobile ? 'FWD' : 'Forward Test'}
+                        </span>
                         
                         {/* MOVED STRATEGY HERE - HEADER */}
                         {mode === 'forward' && (
@@ -578,15 +583,15 @@ const TestModal = ({ onClose }) => {
                         )}
                     </div>
 
-                    {/* CENTER: SYSTEM MONITOR */}
+                    {/* CENTER: SYSTEM MONITOR - ADDED overflow: auto and scrollbar hiding */}
                     {mode === 'forward' && data?.trades && (
-                         <div style={{flex: 1, display: 'flex', justifyContent: 'center'}}>
+                         <div style={{flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden'}}>
                              <SystemMonitor trades={data.trades} isMobile={isMobile} strategy={filterStrategy} />
                          </div>
                     )}
 
-                    {/* RIGHT: Close */}
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X /></button>
+                    {/* RIGHT: Close - ADDED flexShrink: 0 */}
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', flexShrink: 0 }}><X /></button>
                 </div>
 
                 {/* BACKTEST CONFIG (Hidden) */}
