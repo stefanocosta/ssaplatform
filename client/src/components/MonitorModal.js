@@ -54,12 +54,18 @@ const MonitorModal = ({
 
                     // 3. NOTIFICATIONS
                     if (newSignals.length > 0) {
-                        if (Notification.permission === 'granted') {
-                            new Notification(`Found ${newSignals.length} ${strategy} Signals`, { 
-                                body: `Interval: ${selectedInterval}`, 
-                                icon: '/favicon.ico' 
-                            });
+                        // FIX: Safe check - only try notification if supported
+                        if ('Notification' in window && Notification.permission === 'granted') {
+                            try {
+                                new Notification(`Found ${newSignals.length} ${strategy} Signals`, { 
+                                    body: `Interval: ${selectedInterval}`, 
+                                    icon: '/favicon.ico' 
+                                });
+                            } catch (e) {
+                                console.warn("Notification failed:", e);
+                            }
                         }
+
                         if (soundEnabled) {
                             const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); 
                             audio.play().catch(e => console.log("Audio error", e));
@@ -78,12 +84,8 @@ const MonitorModal = ({
             };
 
             // Calculate delay to next minute mark + 2 seconds buffer
-            // This ensures we scan immediately after the candle closes
             const now = new Date();
             const msToNextMinute = (60000 - (now.getTime() % 60000)) + 2000;
-
-            // Log for debug
-            // console.log(`Next scan in ${msToNextMinute/1000} seconds`);
 
             timerId = setTimeout(() => {
                 runScan();
@@ -94,21 +96,18 @@ const MonitorModal = ({
             if (timerId) clearTimeout(timerId);
         };
     }, [isMonitoring, scanTrigger, selectedInterval, strategy, soundEnabled, isOpen, onOpen]); 
-    // ^ Dependency on 'scanTrigger' creates the loop. 
-    // Each scan updates 'scanTrigger', causing this Effect to run again and schedule the next scan.
 
+    // FIX: Updated Start Function (Permissive)
     const startMonitoring = () => {
-        if (!('Notification' in window)) {
-            alert("This browser does not support desktop notifications");
-            return;
+        // Try to request permission, but don't block execution if it fails/missing
+        if ('Notification' in window) {
+            Notification.requestPermission().catch(e => console.log("Notifications blocked/error", e));
         }
-        Notification.requestPermission();
 
         setIsMonitoring(true);
         if (onStatusChange) onStatusChange(true);
         
         // Run one immediate scan for instant feedback
-        // Then the Effect takes over for the interval loops
         setScanTrigger(prev => prev + 1); 
     };
 
