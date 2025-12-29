@@ -178,7 +178,43 @@ const LargeEquityChart = ({ trades, startingCapital }) => {
                 <path d={pathD} fill="none" stroke="#0078d4" strokeWidth="3" vectorEffect="non-scaling-stroke" />
                 {hoveredPoint && <><line x1={getX(chartData.indexOf(hoveredPoint))} y1={padding} x2={getX(chartData.indexOf(hoveredPoint))} y2={height - padding} stroke="#fff" strokeDasharray="2" opacity="0.5"/><circle cx={getX(chartData.indexOf(hoveredPoint))} cy={getY(hoveredPoint.val)} r="4" fill="white"/></>}
             </svg>
-            {hoveredPoint && <div style={{ position: 'absolute', top: '50px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', border: '1px solid #555', padding: '8px', borderRadius: '4px', pointerEvents: 'none', color: '#fff', fontSize: '0.8rem', textAlign: 'center' }}><div>${hoveredPoint.val.toFixed(2)}</div><div style={{color:'#aaa', fontSize:'0.7rem'}}>{hoveredPoint.date}</div></div>}
+            
+            {/* UPDATED TOOLTIP */}
+            {hoveredPoint && (
+                <div style={{ 
+                    position: 'absolute', top: '50px', left: '50%', transform: 'translateX(-50%)', 
+                    background: 'rgba(0,0,0,0.85)', border: '1px solid #555', borderRadius: '6px', 
+                    padding: '10px', pointerEvents: 'none', textAlign: 'center', zIndex: 20, minWidth: '120px',
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                }}>
+                    <div style={{fontWeight:'bold', fontSize:'1rem', color:'#fff', marginBottom:'2px'}}>
+                        ${hoveredPoint.val.toFixed(2)}
+                    </div>
+                    <div style={{color:'#aaa', fontSize:'0.75rem', marginBottom:'6px'}}>
+                        {hoveredPoint.date}
+                    </div>
+                    
+                    {hoveredPoint.trade ? (
+                        <div style={{borderTop:'1px solid #444', paddingTop:'6px', marginTop:'2px'}}>
+                            <div style={{color:'#d1d4dc', fontWeight:'bold', fontSize:'0.85rem'}}>
+                                {hoveredPoint.trade.symbol}
+                            </div>
+                            <div style={{
+                                color: hoveredPoint.trade.direction === 'LONG' ? '#00e676' : '#ff5252',
+                                fontWeight: 'bold', fontSize: '0.8rem', marginTop: '2px',
+                                background: hoveredPoint.trade.direction === 'LONG' ? 'rgba(0,230,118,0.1)' : 'rgba(255,82,82,0.1)',
+                                padding: '2px 6px', borderRadius: '4px', display:'inline-block'
+                            }}>
+                                {hoveredPoint.trade.direction}
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{borderTop:'1px solid #444', paddingTop:'4px', marginTop:'4px', color:'#888', fontSize:'0.7rem', fontStyle:'italic'}}>
+                            Initial Capital
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
