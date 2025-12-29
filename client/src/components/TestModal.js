@@ -135,16 +135,20 @@ const SystemMonitor = ({ trades, isMobile, strategy }) => {
 };
 
 // --- EQUITY CHART (Reused) ---
-const LargeEquityChart = ({ trades }) => {
+const LargeEquityChart = ({ trades, startingCapital }) => {
     const [hoveredPoint, setHoveredPoint] = useState(null);
     const containerRef = useRef(null);
 
     const chartData = useMemo(() => {
         const sorted = [...trades].filter(t => t.status === 'CLOSED').sort((a, b) => new Date(a.entry_date) - new Date(b.entry_date));
-        let currentEquity = 10000; const points = [{ date: 'Start', val: currentEquity, trade: null }];
+        
+        // Use passed startingCapital
+        let currentEquity = startingCapital; 
+        
+        const points = [{ date: 'Start', val: currentEquity, trade: null }];
         sorted.forEach(t => { currentEquity += (t.pnl || 0); points.push({ date: t.entry_date, val: currentEquity, trade: t }); });
         return points;
-    }, [trades]);
+    }, [trades, startingCapital]);
 
     if (!chartData || chartData.length < 2) return <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#666'}}>Not enough data.</div>;
     const width = 1000; const height = 400; const padding = 50;
@@ -167,7 +171,7 @@ const LargeEquityChart = ({ trades }) => {
         <div ref={containerRef} onMouseMove={e => handleInteraction(e.clientX)} onTouchStart={e => handleInteraction(e.touches[0].clientX)} onTouchMove={e => handleInteraction(e.touches[0].clientX)} onMouseLeave={() => setHoveredPoint(null)} onTouchEnd={() => setHoveredPoint(null)}
             style={{ flex: 1, position: 'relative', background: '#222', borderRadius: '8px', margin: '10px 0', border: '1px solid #444', overflow: 'hidden', cursor: 'crosshair', touchAction: 'none' }}>
             <div style={{ position: 'absolute', top: 10, left: 15, color: '#888', fontSize: '0.8rem' }}>Capital Growth</div>
-            <div style={{ position: 'absolute', top: 10, right: 15, fontWeight: 'bold', color: chartData[chartData.length-1].val >= 10000 ? '#00c853' : '#ff3d00' }}>${chartData[chartData.length-1].val.toFixed(2)}</div>
+            <div style={{ position: 'absolute', top: 10, right: 15, fontWeight: 'bold', color: chartData[chartData.length-1].val >= startingCapital ? '#00c853' : '#ff3d00' }}>${chartData[chartData.length-1].val.toFixed(2)}</div>
             <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
                 <path d={pathD} fill="none" stroke="#0078d4" strokeWidth="3" vectorEffect="non-scaling-stroke" />
                 {hoveredPoint && <><line x1={getX(chartData.indexOf(hoveredPoint))} y1={padding} x2={getX(chartData.indexOf(hoveredPoint))} y2={height - padding} stroke="#fff" strokeDasharray="2" opacity="0.5"/><circle cx={getX(chartData.indexOf(hoveredPoint))} cy={getY(hoveredPoint.val)} r="4" fill="white"/></>}
@@ -496,7 +500,9 @@ const TestModal = ({ onClose }) => {
             return <PerformersView data={dashboardData} />;
         }
         if (showEquity) {
-            return <LargeEquityChart trades={dashboardData.trades} />;
+            // UNIFIED STARTING CAPITAL = 1000 for ALL strategies
+            const startCap = 1000;
+            return <LargeEquityChart trades={dashboardData.trades} startingCapital={startCap} />;
         }
         return (
             <div style={{overflowX:'auto', border:'1px solid #444', borderRadius:'6px'}}>
@@ -656,7 +662,7 @@ const TestModal = ({ onClose }) => {
                 {/* MAIN CONTENT AREA */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column' }}>
                     
-                    {!data && loading && <div style={{textAlign:'center', marginTop:'50px', color:'#888'}}>Loading data... This may take a moment.</div>}
+                    {!data && loading && <div style={{textAlign:'center', marginTop:'50px', color:'#888'}}>Running simulation... This may take a moment.</div>}
                     {!data && !loading && mode === 'backtest' && <div style={{textAlign:'center', marginTop:'50px', color:'#666'}}>Configure settings and click RUN TEST</div>}
                     
                     {data && (
