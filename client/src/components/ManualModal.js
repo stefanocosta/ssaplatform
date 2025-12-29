@@ -49,24 +49,42 @@ const ManualModal = ({ onClose }) => {
                         </ul>
                     </section>
 
+                    {/* --- UPDATED SECTION 4 --- */}
                     <section>
-                        <h3>4. Dual Strategy Engines</h3>
+                        <h3>4. Strategy Engines & The "Fast Cycle"</h3>
                         <p>
-                            The platform now includes two distinct algorithmic engines. You can toggle between them in the main control bar, Scanner, or Test suite.
+                            The platform now includes three distinct algorithmic engines. To understand them, you must understand the <strong>Fast Cycle</strong>:
                         </p>
-                        <div className="manual-grid">
-                            <div>
-                                <h4>BASIC (Mean Reversion)</h4>
-                                <p style={{fontSize:'0.85rem'}}>
-                                    Best for Swing Trading. It waits for Price to deviate significantly from the Trend (Hotspot) and triggers when the Cycle confirms a return to value.
-                                    <br/><strong>Focus:</strong> High probability, lower frequency.
+                        <p style={{fontSize:'0.9rem', fontStyle:'italic', color:'#aaa', borderLeft:'3px solid #00bcd4', paddingLeft:'10px', marginBottom:'15px'}}>
+                            <strong>What is the Fast Cycle?</strong><br/>
+                            It is the high-frequency heartbeat of the market. Derived from Time Series Decomposition, it isolates the faster wave components that drive short-term price action, filtering out the slower, longer-term trend.
+                        </p>
+
+                        <div className="manual-grid" style={{gridTemplateColumns: '1fr 1fr 1fr', gap:'10px'}}>
+                            <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'6px'}}>
+                                <h4 style={{color:'#00bcd4', borderBottom:'1px solid #444', paddingBottom:'5px'}}>BASIC</h4>
+                                <p style={{fontSize:'0.8rem', marginTop:'5px'}}>
+                                    <strong>Multi-Entry Swing.</strong><br/>
+                                    Waits for major deviations (Hotspots). It can trigger <em>multiple entries</em> within the same Fast Cycle oscillation if the price continues to offer better value.
+                                    <br/><br/><span style={{color:'#aaa'}}>Best for: Accumulating positions.</span>
                                 </p>
                             </div>
-                            <div>
-                                <h4>FAST (Momentum & Scalp)</h4>
-                                <p style={{fontSize:'0.85rem'}}>
-                                    Best for Volatile Assets. It analyzes the derivative (rate of change) of the "Noise" component to detect 5-bar exhaustion patterns or rapid zero-line reversals.
-                                    <br/><strong>Focus:</strong> Quick reaction, higher frequency.
+
+                            <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'6px'}}>
+                                <h4 style={{color:'#ff9800', borderBottom:'1px solid #444', paddingBottom:'5px'}}>BASIC (S)</h4>
+                                <p style={{fontSize:'0.8rem', marginTop:'5px'}}>
+                                    <strong>Single-Entry Precision.</strong><br/>
+                                    Identical logic to Basic, but stricter: it allows only <strong>ONE entry</strong> per Fast Cycle wave. It waits for the <em>optimal</em> synchronization point before firing.
+                                    <br/><br/><span style={{color:'#aaa'}}>Best for: Sniper entries, less drawdown.</span>
+                                </p>
+                            </div>
+
+                            <div style={{background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'6px'}}>
+                                <h4 style={{color:'#e040fb', borderBottom:'1px solid #444', paddingBottom:'5px'}}>FAST</h4>
+                                <p style={{fontSize:'0.8rem', marginTop:'5px'}}>
+                                    <strong>Momentum Scalp.</strong><br/>
+                                    Analyzes the derivative (rate of change) of the "Noise" component. Detects rapid zero-line reversals and 5-bar exhaustion patterns.
+                                    <br/><br/><span style={{color:'#aaa'}}>Best for: High volatility assets.</span>
                                 </p>
                             </div>
                         </div>
@@ -75,7 +93,7 @@ const ManualModal = ({ onClose }) => {
                     <section>
                         <h3>5. The Market Scanner</h3>
                         <p>
-                            The Scanner automates the search for opportunities based on your <strong>Selected Strategy</strong> (Basic or Fast).
+                            The Scanner automates the search for opportunities based on your <strong>Selected Strategy</strong> (Basic, Basic S, or Fast).
                         </p>
                         <ul>
                             <li><strong>Trend & Forecast:</strong> Instant direction arrows based on SSA projection.</li>
@@ -96,7 +114,6 @@ const ManualModal = ({ onClose }) => {
                         </ul>
                     </section>
 
-                    {/* --- UPDATED SECTION 7 --- */}
                     <section>
                         <h3>7. Real-Time Forward Testing</h3>
                         <p>
